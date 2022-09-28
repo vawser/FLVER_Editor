@@ -19,24 +19,22 @@ using ObjLoader.Loader.Loaders;
 using Assimp;
 using System.Data;
 
-
-
 namespace FLVER_EDITOR
 {
     public class VertexInfo
     {
-     public int meshIndex = 0;
-      public  uint vertexIndex = 0;
-
+        public int meshIndex = 0;
+        public  uint vertexIndex = 0;
     }
+
     static partial class Program 
     {
-        public static FLVER targetFlver;
+        public static FLVER targetFlver = null;
         public static TPF targetTPF = null;
         public static string flverName;
         public static List<DataGridViewTextBoxCell> boneNameList;
-        public static List<TextBox> parentList;
-        public static List<TextBox> childList;
+        public static List<short> parentList;
+        public static List<short> childList;
         public static List<VertexInfo> verticesInfo = new List<VertexInfo>();
 
         public static Vector3D[] bonePosList = new Vector3D[1000];
@@ -46,7 +44,7 @@ namespace FLVER_EDITOR
         public static List<FLVER.Vertex> vertices = new List<FLVER.Vertex>();
         public static Mono3D mono;
 
-        public static string orgFileName = "";
+        public static string target_filename = "";
 
 
         public static TextBox flexA;
@@ -60,13 +58,15 @@ namespace FLVER_EDITOR
         public static int checkingMeshNum = 0;
         public static Boolean useCheckingMesh = false;
 
+        public static Boolean showing3D = false;
+
         /***settings***/
         public static Boolean basicMode = false;
         public static Boolean loadTexture = true;
         public static Boolean show3D = false;
         public static Boolean legacyDisplay = false;
         public static Boolean smooth = false;
-        public static int boneFindParentTimes = 15;//if cannot find bone, find if its parent bone matches flver bone name
+        public static int boneFindParentTimes = 15; //if cannot find bone, find if its parent bone matches flver bone name
 
 
         public static Boolean boneDisplay = false;
@@ -81,53 +81,12 @@ namespace FLVER_EDITOR
 
         public static string version = "1.971";
 
-        //v1.68 Update: fix switch YZ axis's UV coordinate problems when importing models
-        //v1.71:Added xml edit & auto set texture path method.
-        //v1.72:Fixed scaling doesn't change tangent value error.
-        //v1.73:Fixed xml auto edit bug and tangent flip bug. 
-        //Also arevised Rev.Normal functionality. Now it also reverse the tangents.
-        //Also added bone shift functionality! Can choose to shift bone weights if load another bone.json file
-
-        //v1.8:Added skeleton display & toggle functionalty!
-        //Press B to toggle skeleton display and press M to toggle dummmy display!
-
-        //v1.81:Added automatic material rename functionality.
-        //Added vertex rigth click edit functionality.
-        //Fixed auto set texture path bug.
-
-        //v1.82: Added mesh->M. Reset functionality to help you port DS2 .flv file and make it compatible with new P[ARSN] material. 
-        //Added Mesh->TBF, so that you can choose to render the back face or not.
-        //Added back face rendering functionality
-
-         //1.83: Added experimental "Export DAE" functionality
-         //More general bone display functionality
-         //Window maxmimum bug fixed
-
-        //1.85: Added LOD setting when import models
-
-            //1.86: Added Mesh->TBF ALL button
-            //Fixed minor LOD importing bug 
-
-        //1.87: In "Check vertex" window, added vertex mesh index info and vertex index info.
-            //Added : "delete vertex" and "delete vertex above/below" functionality
-            //Added: Silence vertex deletion functionality: ctrl + right click in 3d model viewing software to enter such mode, then press alt + right click to quick delete vertex.
-
-        //1.9: Added texture loading functionality: the tpf file's name must be the same as flver file name.
-        //Added MySFormat.ini to help tweaking some special effects.
-        //Added mroe shading mod and F: flat shading mod to better suit the need.
-
-            //1.91: Added loading dcx file functionality (need the extension to be .dcx)
-
-            //1.92+1.93 Fixed some minor fbx import bug.
-
-            //1.95: find bones' parent 15 times.
-
-            //1.96: fix "affect bones" function. Now bones can be scaled properly
-
-            //1.97： added experimental Sekiro and Elden Ring .dcx Support
-                //1.971: repair minor flver crash problem
         public static string[] argments = { };
-        
+
+        public static IniParser settingFile;
+        public static string assemblyPath;
+        public static string iniPath;
+
         /// <summary>
         ///  Program Init
         /// </summary>
@@ -135,1066 +94,289 @@ namespace FLVER_EDITOR
         static void Main(string[] args)
         {
             argments = args;
-            
-            string assemblyPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
 
-            IniParser settingFile = new IniParser(assemblyPath + "\\resources\\FLVER_EDITOR.ini");
+            // Get settings ini file
+            assemblyPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            iniPath = assemblyPath + "\\resources\\FLVER_EDITOR.ini";
+            settingFile = new IniParser(iniPath);
 
+            // Read "loadTexture" from ini file
             loadTexture = (settingFile.GetSetting("FLVER", "loadTexture").Trim() != "0") ? true : false;
 
+            // Read "show3D" from ini file
             show3D = (settingFile.GetSetting("FLVER", "show3D").Trim() != "0") ? true : false;
+
+            // Read "legacyDisplay" from ini file
             legacyDisplay = (settingFile.GetSetting("FLVER", "legacyDisplay").Trim() != "0") ? true : false;
 
-
-            ModelAdjModule();
-
-
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.Run(new EditorView(args));
         }
 
-        /// <summary>
-        /// Update Vertices
-        /// </summary>
-        public static void updateVerticesLegacy() 
+        public static void LoadFLVER(string selected_filename, EditorView form)
         {
-            useCheckingMesh = false;
-            List<VertexPositionColor> ans = new List<VertexPositionColor>();
-            List<VertexPositionColor> triangles = new List<VertexPositionColor>();
-            List<VertexPositionColorTexture> textureTriangles = new List<VertexPositionColorTexture>();
-            vertices.Clear();
-            verticesInfo.Clear();
-            List<MeshInfos> mis = new List<MeshInfos>();
+            targetFlver = null;
 
-
-
-            if (useCheckingPoint)
+            if(showing3D)
             {
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X - 0.05f, checkingPoint.Z - 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.05f, checkingPoint.Z + 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
-
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X - 0.05f, checkingPoint.Z + 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.05f, checkingPoint.Z - 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
-
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X, checkingPoint.Z, checkingPoint.Y), Microsoft.Xna.Framework.Color.Blue));
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.2f * checkingPointNormal.X, checkingPoint.Z + 0.2f * checkingPointNormal.Z, checkingPoint.Y + 0.2f * checkingPointNormal.Y), Microsoft.Xna.Framework.Color.Blue));
-
-
-                useCheckingPoint = false;
+                showing3D = false;
+                mono.Exit();
             }
 
-            for (int i = 0; i < targetFlver.Meshes.Count; i++)
+            Program.target_filename = selected_filename;
+
+            // DCX File Handling
+            if (target_filename.Length > 4)
             {
-                // int currentV = 0;
-                //Microsoft.Xna.Framework.Vector3[] vl = new Microsoft.Xna.Framework.Vector3[3];
-                if (targetFlver.Meshes[i] == null) { continue; }
-                foreach (var vi in targetFlver.Meshes[i].Vertices) 
+
+                // File is a DCX file
+                if (Program.target_filename.Substring(Program.target_filename.Length - 4) == ".dcx")
                 {
-                    ans.Add(new VertexPositionColor(toXnaV3XZY(vi.Positions[0]), Microsoft.Xna.Framework.Color.Black));
+                    System.Console.WriteLine("Target Filename is DCX");
 
-                 }
-
-
-                for (uint j = 0; j < targetFlver.Meshes[i].Vertices.Count; j++)
-                {
-                    FLVER.Vertex v = targetFlver.Meshes[i].Vertices[(int)j];
-                    vertices.Add(v);
-                    VertexInfo vi = new VertexInfo();
-                    vi.meshIndex = i;
-                    vi.vertexIndex = j;
-                    verticesInfo.Add(vi);
-                }
-            }
-
-
-
-            mono.vertices = ans.ToArray();
-            // mono.triTextureVertices = textureTriangles.ToArray();
-            mono.meshInfos = mis.ToArray();
-            mono.triVertices = triangles.ToArray();
-
-        }
-      
-
-
-        public static void updateVertices()
-        {
-
-            if (legacyDisplay) { updateVerticesLegacy();return; }
-            List<VertexPositionColor> ans = new List<VertexPositionColor>();
-            List<VertexPositionColor> triangles = new List<VertexPositionColor>();
-            List<VertexPositionColorTexture> textureTriangles = new List<VertexPositionColorTexture>();
-            vertices.Clear();
-            verticesInfo.Clear();
-            List<MeshInfos> mis = new List<MeshInfos>();
-
-            for (int i = 0; i < targetFlver.Meshes.Count; i++)
-            {
-                // int currentV = 0;
-                //Microsoft.Xna.Framework.Vector3[] vl = new Microsoft.Xna.Framework.Vector3[3];
-                if (targetFlver.Meshes[i] == null) { continue; }
-
-
-                bool renderBackFace = false;
-                if (targetFlver.Meshes[i].FaceSets.Count > 0)
-                {
-                    if (targetFlver.Meshes[i].FaceSets[0].CullBackfaces == false) { renderBackFace = true; }
-                }
-                foreach (FLVER.Vertex[] vl in targetFlver.Meshes[i].GetFaces())
-                {
-                    Microsoft.Xna.Framework.Color cline = Microsoft.Xna.Framework.Color.Black;
-                    if (useCheckingMesh && checkingMeshNum == i)
-                    {
-                        cline.G = 255;
-                        cline.R = 255;
-                    }
-                    cline.A = 125;
-                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[0].Positions[0]), cline));
-                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[1].Positions[0]), cline));
-                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[0].Positions[0]), cline));
-                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[2].Positions[0]), cline));
-                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[1].Positions[0]), cline));
-                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[2].Positions[0]), cline));
-
-                    Microsoft.Xna.Framework.Color c = new Microsoft.Xna.Framework.Color();
-
-                    Microsoft.Xna.Framework.Vector3 va = toXnaV3(vl[1].Positions[0]) - toXnaV3(vl[0].Positions[0]);
-                    Microsoft.Xna.Framework.Vector3 vb = toXnaV3(vl[2].Positions[0]) - toXnaV3(vl[0].Positions[0]);
-                    Microsoft.Xna.Framework.Vector3 vnromal = crossPorduct(va, vb);
-                    vnromal.Normalize();
-                    Microsoft.Xna.Framework.Vector3 light = new Microsoft.Xna.Framework.Vector3(mono.lightX, mono.lightY, mono.lightZ);
-                    light.Normalize();
-                    float theta = dotProduct(vnromal, light);
-                    int value = 125 + (int)(125 * theta);
-                    if (value > 255) { value = 255; }
-                    if (value < 0) { value = 0; }
-                    if (mono.flatShading) { value = 255; }
-                    c.R = (byte)value;
-                    c.G = (byte)value;
-                    c.B = (byte)value;
-                    c.A = 255;
-                    if (useCheckingMesh && checkingMeshNum == i)
-                    {
-                        c.B = 0;
-                    }
-                    triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[0].Positions[0]), c));
-                    triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[2].Positions[0]), c));
-                    triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[1].Positions[0]), c));
-
-                    if (loadTexture)
-                    {
-                        textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[0].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[0].UVs[0].X, vl[0].UVs[0].Y)));
-                        textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[2].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[2].UVs[0].X, vl[2].UVs[0].Y)));
-                        textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[1].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[1].UVs[0].X, vl[1].UVs[0].Y)));
-
-                    }
-
-
-
-                    if (renderBackFace)
-                    {
-                        triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[0].Positions[0]), c));
-                        triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[1].Positions[0]), c));
-                        triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[2].Positions[0]), c));
-
-
-                        if (loadTexture)
-                        {
-                            textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[0].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[0].UVs[0].X, vl[0].UVs[0].Y)));
-                            textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[1].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[1].UVs[0].X, vl[1].UVs[0].Y)));
-                            textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[2].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[2].UVs[0].X, vl[2].UVs[0].Y)));
-
-                        }
-
-                    }
-
-
-                }
-
-                for (uint j = 0; j < targetFlver.Meshes[i].Vertices.Count;j++) 
-                {
-                    FLVER.Vertex v = targetFlver.Meshes[i].Vertices[(int)j];
-                      vertices.Add(v);
-                    VertexInfo vi = new VertexInfo();
-                    vi.meshIndex = i;
-                    vi.vertexIndex = j;
-                    verticesInfo.Add(vi);
-                }
-
-                MeshInfos mi = new MeshInfos();
-               var tName = targetFlver.Materials[ targetFlver.Meshes[i].MaterialIndex].Textures[0].Path;
-              tName = FindFileName(tName);
-                mi.textureName = tName;
-                //MessageBox.Show("Found texture name:" + mi.textureName);
-               mi.triTextureVertices = textureTriangles.ToArray();
-                textureTriangles.Clear();
-                mis.Add(mi);
-            }
-            if (ans.Count % 2 != 0)
-            {
-                ans.Add(ans[ans.Count - 1]);
-            }
-
-            for (int i = 0;i < bonePosList.Length;i++)
-            {
-                bonePosList[i] = null;
-
-            }
-
-            //Calcaulte bone global space
-
-            //bone space X,Y,Z axis
-            Vector3D[] bsX = new Vector3D[targetFlver.Bones.Count];
-            Vector3D[] bsY = new Vector3D[targetFlver.Bones.Count];
-            Vector3D[] bsZ = new Vector3D[targetFlver.Bones.Count];
-
-            //bone space origin 
-            Vector3D[] bso = new Vector3D[targetFlver.Bones.Count];
-
-
-            int A = 1;
-            int B = 2;
-            int C = 3;
-
-
-          //  deprecated bone generate functionality
-                {
-                /*
-                for (int i = 0; i < targetFlver.Bones.Count && boneDisplay; i++)
-                {
-                    FLVER.Bone b = targetFlver.Bones[i];
-
-                    bsX[i] = new Vector3D(0,0,1);
-                    bsY[i] = new Vector3D(0, 1, 0);
-                    bsZ[i] = new Vector3D(-1, 0, 0);
-                    bso[i] = new Vector3D();
-                    //targetFlver.Bones[i].Translation
-                    if (targetFlver.Bones[i].ParentIndex == -1 && targetFlver.Bones[i].ChildIndex == -1) { continue; }
-                    if (targetFlver.Bones[i].ParentIndex == -1 ) {
-
-                        bso[i] = new Vector3D(b.Translation.X, b.Translation.Y, b.Translation.Z);
-
-                        Vector3D nx = new Vector3D(bsX[i].toNumV3());
-                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsX[i].toNumV3(), A * b.Rotation.X));
-                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsY[i].toNumV3(), B * b.Rotation.Y));
-                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsZ[i].toNumV3(), C * b.Rotation.Z));
-
-
-
-                        Vector3D ny = new Vector3D(bsY[i].toNumV3());
-                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsX[i].toNumV3(), A * b.Rotation.X));
-                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsY[i].toNumV3(), B * b.Rotation.Y));
-                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsZ[i].toNumV3(), C * b.Rotation.Z));
-
-
-                        Vector3D nz = new Vector3D(bsZ[i].toNumV3());
-                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsX[i].toNumV3(), A * b.Rotation.X));
-                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsY[i].toNumV3(),B * b.Rotation.Y));
-                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsZ[i].toNumV3(), C * b.Rotation.Z));
-                        nx = nx * b.Scale.X;
-                        ny = ny * b.Scale.Y;
-                        ny = ny * b.Scale.Z;
-
-                        bsX[i] = nx;
-                        bsY[i] = ny;
-                        bsZ[i] = nz;
-
-                        continue;
-
-                    }
-                    int pbid = targetFlver.Bones[i].ParentIndex;
-                    if (bsX[pbid] != null)
-                    {
-
-                         float r1 = b.Rotation.Y;
-                         float r2 = b.Rotation.X;
-                         float r3 = b.Rotation.Z;
-                         if (A == 1) { r1 = b.Rotation.X; }
-                         if (A == 2) { r1 = b.Rotation.Y; }
-                         if (A == 3) { r1 = b.Rotation.Z; }
-
-                         if (B == 1) { r2 = b.Rotation.X; }
-                         if (B == 2) { r2 = b.Rotation.Y; }
-                         if (B == 3) { r2 = b.Rotation.Z; }
-
-                         if (C == 1) { r3 = b.Rotation.X; }
-                         if (C == 2) { r3 = b.Rotation.Y; }
-                         if (C == 3) { r3 = b.Rotation.Z; }
-                        bsX[i] = new Vector3D(bsX[pbid].X, bsX[pbid].Y, bsX[pbid].Z);
-                        bsY[i] = new Vector3D(bsY[pbid].X, bsY[pbid].Y, bsY[pbid].Z);
-                        bsZ[i] = new Vector3D(bsZ[pbid].X, bsZ[pbid].Y, bsZ[pbid].Z);
-
-                        Vector3D nx = new Vector3D(bsX[i].toNumV3());
-                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsX[i].toNumV3(), r1));
-                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsY[i].toNumV3(), r2));
-                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsZ[i].toNumV3(), r3));
-
-                        Vector3D ny = new Vector3D(bsY[i].toNumV3());
-                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsX[i].toNumV3(), r1));
-                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsY[i].toNumV3(),r2));
-                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsZ[i].toNumV3(), r3));
-
-                        Vector3D nz = new Vector3D(bsZ[i].toNumV3());
-                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsX[i].toNumV3(),r1));
-                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsY[i].toNumV3(), r2));
-                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsZ[i].toNumV3(), r3));
-
-                        nx = nx * b.Scale.X;
-                        ny = ny * b.Scale.Y;
-                        ny = ny * b.Scale.Z;
-
-
-                        bsX[i] = nx;
-                        bsY[i] = ny;
-                        bsZ[i] = nz;
-
-                        bso[i] = new Vector3D(bso[pbid].X, bso[pbid].Y, bso[pbid].Z);
-
-                        bso[i] = bso[i] + b.Translation.X * bsX[pbid] + b.Translation.Y * bsY[pbid] + b.Translation.Z * bsZ[pbid];
-                    }
-
-                }
-
-
-                for (int i = 0; i < targetFlver.Bones.Count && boneDisplay ; i++)
-                {
-                    //targetFlver.Bones[i].Translation
-                    if (targetFlver.Bones[i].ParentIndex ==  -1 && targetFlver.Bones[i].ChildIndex == -1) { continue; }
-
-                    Vector3 actPos = findBoneTrans(targetFlver.Bones,i,new Vector3());
-
-                    actPos = bso[i].toNumV3();
-
-                    Vector3D forward = new Vector3D(0f,0.05f,0f);
-                    float pitch = targetFlver.Bones[i].Rotation.X;
-                    float roll = targetFlver.Bones[i].Rotation.Z;
-                    float yaw = targetFlver.Bones[i].Rotation.Y;
-                    Vector3 r = targetFlver.Bones[i].Rotation;
-                    //forward = new Vector3D( RotatePoint(forward.toNumV3(),pitch,roll,yaw));
-                    forward = new Vector3D(RotatePoint(forward.toNumV3(), r.Y,r.X,r.Z));
-
-                    forward = bsX[i] * 0.1f;
-
-
-                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X - 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                     ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-
-                     ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z - 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                     ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z + 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-
-                     ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z, actPos.Y - 0.025f), Microsoft.Xna.Framework.Color.Purple));
-                     ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z, actPos.Y + 0.025f), Microsoft.Xna.Framework.Color.Purple));
-
-                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X - 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + forward.X, actPos.Z + forward.Z, actPos.Y + forward.Y), Microsoft.Xna.Framework.Color.Purple));
-
-                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + forward.X, actPos.Z + forward.Z, actPos.Y + forward.Y), Microsoft.Xna.Framework.Color.Purple));
-
-                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z - 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + forward.X, actPos.Z + forward.Z, actPos.Y + forward.Y), Microsoft.Xna.Framework.Color.Purple));
-
-                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z + 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + forward.X, actPos.Z + forward.Z, actPos.Y + forward.Y), Microsoft.Xna.Framework.Color.Purple));
-
-
-                }
-                */
-            }
-            //
-
-            if (boneDisplay)
-            {
-                Transform3D[] boneTrans = new Transform3D[targetFlver.Bones.Count];
-                for (int i=0;i< targetFlver.Bones.Count;i++)
-                {
-                    boneTrans[i] = new Transform3D();
-                    boneTrans[i].rotOrder = rotOrder;
-                    boneTrans[i].position = new Vector3D(targetFlver.Bones[i].Translation);
-                    boneTrans[i].setRotationInRad(new Vector3D(targetFlver.Bones[i].Rotation));
-                    boneTrans[i].scale = new Vector3D(targetFlver.Bones[i].Scale);
-
-                    if (targetFlver.Bones[i].ParentIndex >= 0)
-                    {
-                        boneTrans[i].parent = boneTrans[targetFlver.Bones[i].ParentIndex];
-
-                        Vector3D actPos = boneTrans[i].getGlobalOrigin();
-                        /* ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X - 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                         ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-
-                         ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z - 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                         ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z + 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-
-                         ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z, actPos.Y - 0.025f), Microsoft.Xna.Framework.Color.Purple));
-                         ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z, actPos.Y + 0.025f), Microsoft.Xna.Framework.Color.Purple));*/
-
-
-                        if (boneTrans[targetFlver.Bones[i].ParentIndex] != null)
-                        {
-                            Vector3D parentPos = boneTrans[targetFlver.Bones[i].ParentIndex].getGlobalOrigin();
-
-                            ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(parentPos.X - 0.005f, parentPos.Z - 0.005f, parentPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                            ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-
-                            ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(parentPos.X + 0.005f, parentPos.Z + 0.005f, parentPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                            ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
-                        }
-                       
-                    }
-
-                    
-
-                }
-
-                
-            }
-
-
-
-            for (int i = 0; i < targetFlver.Dummies.Count && dummyDisplay; i++)
-            {
-                FLVER.Dummy d = targetFlver.Dummies[i];
-
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X - 0.025f, d.Position.Z, d.Position.Y), Microsoft.Xna.Framework.Color.Purple));
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X + 0.025f, d.Position.Z, d.Position.Y), Microsoft.Xna.Framework.Color.Purple));
-
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X, d.Position.Z - 0.025f, d.Position.Y), Microsoft.Xna.Framework.Color.Purple));
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X, d.Position.Z + 0.025f, d.Position.Y), Microsoft.Xna.Framework.Color.Purple));
-
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X, d.Position.Z, d.Position.Y), Microsoft.Xna.Framework.Color.Green));
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X + d.Forward.X, d.Position.Z + d.Forward.Z, d.Position.Y + d.Forward.Y), Microsoft.Xna.Framework.Color.Green));
-
-            }
-
-            if (useCheckingPoint)
-            {
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X - 0.05f, checkingPoint.Z - 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.05f, checkingPoint.Z + 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
-
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X - 0.05f, checkingPoint.Z + 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.05f, checkingPoint.Z - 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
-
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X , checkingPoint.Z , checkingPoint.Y), Microsoft.Xna.Framework.Color.Blue));
-                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X +  0.2f * checkingPointNormal.X, checkingPoint.Z + 0.2f * checkingPointNormal.Z, checkingPoint.Y + 0.2f * checkingPointNormal.Y), Microsoft.Xna.Framework.Color.Blue));
-
-
-                useCheckingPoint = false;
-            }
-            useCheckingMesh = false;
-            mono.vertices = ans.ToArray();
-            // mono.triTextureVertices = textureTriangles.ToArray();
-            mono.meshInfos = mis.ToArray();
-            mono.triVertices = triangles.ToArray();
-        }
-
-
-
-
-        static void autoBackUp()
-        {
-
-            if (!File.Exists(orgFileName + ".bak"))
-            {
-                System.IO.File.Copy(orgFileName, orgFileName + ".bak", false);
-            }
-
-
-
-        }
-
-
-        /// <summary>
-        /// Start window
-        /// </summary>
-        static void ModelAdjModule()
-        {
-
-            System.Windows.Forms.OpenFileDialog openFileDialog1;
-            openFileDialog1 = new System.Windows.Forms.OpenFileDialog();
-            openFileDialog1.InitialDirectory = System.IO.Directory.GetCurrentDirectory();
-            openFileDialog1.Title = "Choose fromsoftware .flver model file. by Forsaknsilver";
-            //openFileDialog1.ShowDialog();
-            //MessageBox.Show("Import something?");
-
-            if (argments.Length > 0)
-            {
-                openFileDialog1.FileName = argments[0];
-                orgFileName = openFileDialog1.FileName;
-            }
-            else
-            if (openFileDialog1.ShowDialog() == DialogResult.OK)
-            {
-                //Console.WriteLine(openFileDialog1.FileName);
-                //openFileDialog1.
-                orgFileName = openFileDialog1.FileName;
-            }
-            else
-            {
-                /* Mono3D mono = new Mono3D();
-                 mono.Run();*/
-                return;
-            }
-            string fname = openFileDialog1.FileName;
-            FLVER b = null;
-            if (fname.Length > 4) 
-            {
-                if (openFileDialog1.FileName.Substring(fname.Length-4) == ".dcx") 
-                {
-                    //遇到不是DS3,BB的情况会报错，这时候进入DCX状态
+                    // If it is not DS3 or BB, an error will be reported. At this time, it will enter the DCX state.
                     SoulsFormats.BND4 bnds = null;
                     List<BinderFile> flverFiles = new List<BinderFile>();
+
+                    // Support BND4(DS2,DS3,BB) only
                     try
                     {
-                       
-                        //Support BND4(DS2,DS3,BB) only
-                        bnds = SoulsFormats.SoulsFile<SoulsFormats.BND4>.Read(openFileDialog1.FileName);
+                        bnds = SoulsFormats.SoulsFile<SoulsFormats.BND4>.Read(Program.target_filename);
                     }
-                    catch (Exception e) //进入dcx状态
+                    catch (Exception e)
                     {
                         Console.WriteLine("Is not BND4... Try DCX decompress");
-                        var fileName = openFileDialog1.FileName;
+                        var fileName = Program.target_filename;
                         byte[] bytes = DCX.Decompress(fileName, out DCX.Type compression);
                         if (BND4.Is(bytes))
                         {
                             Console.WriteLine($"Unpacking BND4: {fileName}...");
                             bnds = SoulsFormats.SoulsFile<SoulsFormats.BND4>.Read(bytes);
                         }
-
-                        //throw e;
-
                     }
+
                     if (bnds == null)
                     {
-                        MessageBox.Show("Read error.");
-                        Application.Exit();
+                        MessageBox.Show("Failed to read DCX file.");
+                        return;
                     }
-                    Form cf = new Form();
-                        cf.Size = new System.Drawing.Size(520, 400);
-                        cf.Text = "Select the flver file you want to view";
-                        cf.FormBorderStyle = FormBorderStyle.FixedDialog;
 
-                        ListBox lv = new ListBox();
-                        lv.Size = new System.Drawing.Size(490, 330);
-                        lv.Location = new System.Drawing.Point(10, 10);
-                        lv.MultiColumn = false;
+                    System.Windows.Forms.Form flver_selection = new System.Windows.Forms.Form();
+                    flver_selection.Size = new System.Drawing.Size(520, 400);
+                    flver_selection.Text = "Select the flver file you want to view";
+                    flver_selection.FormBorderStyle = FormBorderStyle.FixedDialog;
 
-                        foreach (var bf in bnds.Files)
+                    ListBox flver_selection_list = new ListBox();
+                    flver_selection_list.Size = new System.Drawing.Size(490, 330);
+                    flver_selection_list.Location = new System.Drawing.Point(10, 10);
+                    flver_selection_list.MultiColumn = false;
+
+                    foreach (var binder_file in bnds.Files)
+                    {
+                        if (binder_file.Name.Contains(".flver"))
                         {
-                            //  MessageBox.Show("Found:" + bf.Name);
-
-                            if (bf.Name.Contains(".flver"))
+                            flverFiles.Add(binder_file);
+                            flver_selection_list.Items.Add(binder_file.Name);
+                        }
+                        else if (binder_file.Name.Length >= 4 && loadTexture)
+                        {
+                            if (binder_file.Name.Substring(binder_file.Name.Length - 4) == ".tpf")
                             {
-                                flverFiles.Add(bf);
-                                lv.Items.Add(bf.Name);
-                            }
-                            else if (bf.Name.Length >= 4 && loadTexture)
-                            {
-                                if (bf.Name.Substring(bf.Name.Length - 4) == ".tpf")
+                                try
                                 {
-                                    try { targetTPF = TPF.Read(bf.Bytes); } catch (Exception e) { MessageBox.Show("Unsupported tpf file"); }
+                                    targetTPF = TPF.Read(binder_file.Bytes);
+                                }
+                                catch (Exception e)
+                                {
+                                    MessageBox.Show("Unsupported tpf file");
                                 }
                             }
-
                         }
 
-                        Button select = new Button();
-                        select.Text = "Select";
-                        select.Size = new System.Drawing.Size(490, 20);
-                        select.Location = new System.Drawing.Point(10, 340);
-                        select.Click += (s, e) =>
-                        {
-                            if (lv.SelectedIndices.Count == 0) { return; }
-                            b = FLVER.Read(flverFiles[lv.SelectedIndices[0]].Bytes);
-                            openFileDialog1.FileName = openFileDialog1.FileName + "." + FindFileName(flverFiles[0].Name) + ".flver";
-                            flverName = openFileDialog1.FileName;
-                            cf.Close();
-                        };
-                        cf.Controls.Add(lv);
-                        cf.Controls.Add(select);
+                    }
 
-                        if (flverFiles.Count == 0)
-                        {
-                            MessageBox.Show("No FLVER files found!");
+                    Button select = new Button();
+                    select.Text = "Select";
+                    select.Size = new System.Drawing.Size(490, 20);
+                    select.Location = new System.Drawing.Point(10, 340);
 
+                    select.Click += (s, e) =>
+                    {
+                        if (flver_selection_list.SelectedIndices.Count == 0)
+                        {
                             return;
                         }
-                        else if (flverFiles.Count == 1)
-                        {
-                            b = FLVER.Read(flverFiles[0].Bytes);
-                            openFileDialog1.FileName = openFileDialog1.FileName + "." + FindFileName(flverFiles[0].Name) + ".flver";
-                            flverName = openFileDialog1.FileName;
-                        }
-                        else
-                        {
-                            cf.ShowDialog();
-                        }
 
-                  
-                   
+                        targetFlver = FLVER.Read(flverFiles[flver_selection_list.SelectedIndices[0]].Bytes);
 
-                  
-                   // MessageBox.Show("Entering dcx mode");
-                    //Application.Exit();
+                        Program.target_filename = Program.target_filename + "." + FindFileName(flverFiles[0].Name) + ".flver";
+                        flverName = Program.target_filename;
+                        flver_selection.Close();
+                    };
+
+                    flver_selection.Controls.Add(flver_selection_list);
+                    flver_selection.Controls.Add(select);
+
+                    if (flverFiles.Count == 0)
+                    {
+                        MessageBox.Show("No FLVER files found!");
+
+                        return;
+                    }
+                    else if (flverFiles.Count == 1)
+                    {
+                        targetFlver = FLVER.Read(flverFiles[0].Bytes);
+                        Program.target_filename = Program.target_filename + "." + FindFileName(flverFiles[0].Name) + ".flver";
+                        flverName = Program.target_filename;
+                    }
+                    else
+                    {
+                        flver_selection.ShowDialog();
+                    }
                 }
             }
 
-
-            if (b == null) 
+            // Assign flver 
+            if (targetFlver == null)
             {
-                b = FLVER.Read(openFileDialog1.FileName);
-                flverName = openFileDialog1.FileName;
+                targetFlver = FLVER.Read(Program.target_filename);
+                flverName = Program.target_filename;
             }
 
+            form.UpdateEditor();
 
+            StartMonoGame();
+        }
 
-            targetFlver = b;
-
+        public static void StartMonoGame()
+        {
+            // Start Mono3D instance
             new System.Threading.Thread(() =>
             {
                 System.Threading.Thread.CurrentThread.IsBackground = true;
                 mono = new Mono3D();
-                if (show3D) 
+
+                if (show3D)
                 {
+                    showing3D = true;
                     updateVertices();
                     mono.Run();
                 }
-
-
             }).Start();
+        }
 
+        // Used for the bone json display
+        //var serializer = new JavaScriptSerializer();
+        //string serializedResult = serializer.Serialize(targetFlver.Bones);
 
+        // Used to save the edited bone json field to the flver
+        //current_flver.Bones = serializer.Deserialize<List<FLVER.Bone>>(tbones.Text);
+        //current_flver.Header = serializer.Deserialize<FLVER.FLVERHeader>(tbones2.Text);
 
-       
-
-            Form f = new Form();
-            f.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            f.Text = "FLVER Bones - " + openFileDialog1.FileName;
-            Panel p = new Panel();
-            int sizeY = 50;
-            int currentY = 10;
-            boneNameList = new List<DataGridViewTextBoxCell>();
-            parentList = new List<TextBox>();
-            childList = new List<TextBox>();
-
-            var boneParentList = new List<DataGridViewTextBoxCell>();
-            var boneChildList = new List<DataGridViewTextBoxCell>();
-            //p.AutoSize = true;
-            p.AutoScroll = true;
-            f.Controls.Add(p);
-
-            //Basic mod disabled
-            /* if (b.Bones.Count > 80)
-             {
-                 var confirmResult = MessageBox.Show("looks like there are too many bones, do you want the basic mode to save CPU resources?",
-                                   "Caution",
-                                   MessageBoxButtons.YesNo);
-                 if (confirmResult == DialogResult.Yes)
-                 {
-                     basicMode = true;
-                 }
-             }*/
-            DataGridView dg = new DataGridView();
-
-            /* int index = dg.Rows.Add();
-             dg.Rows[index].Cells[0].Value = "1";
-             dg.Rows[index].Cells[1].Value = "2";
-             dg.Rows[index].Cells[2].Value = "监听";*/
-            var bindingList = new System.ComponentModel.BindingList<FLVER.Bone>(b.Bones);
-            //System.Data.DataTable dt = ToDataTable(b.Bones);
-            //DataTable dt = new DataTable();
-            //dt.Columns.Add(new DataColumn("index", typeof(string)));
-
-            dg.Columns.Add("Index", "Index");
-            dg.Columns[0].Width = 50;
-            dg.Columns.Add("Name", "Name");
-            dg.Columns.Add("ParentID", "ParentID");
-            dg.Columns[2].Width = 70;
-            dg.Columns.Add("ChildID", "ChildID");
-            dg.Columns[3].Width = 70;
-            dg.Columns.Add("Position", "Position");
-            dg.Columns.Add("Scale", "Scale");
-            dg.Columns.Add("Rotation", "Rotation");
-
-
-
-            // dt.Columns["colStatus"].Expression = String.Format("IIF(colBestBefore < #{0}#, 'Ok','Not ok')", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-
-            //dt.Rows.Add(DateTime.Now.AddDays(-1));
-            //  dt.Rows.Add(DateTime.Now.AddDays(1));
-            //  dt.Rows.Add(DateTime.Now.AddDays(2));
-            //  dt.Rows.Add(DateTime.Now.AddDays(-2));
-
-            foreach (DataGridViewColumn column in dg.Columns)
+        public static bool SaveBoneChanges()
+        {
+            if (targetFlver != null)
             {
-
-                column.SortMode = DataGridViewColumnSortMode.NotSortable;
-            }
-            dg.Location = new System.Drawing.Point(10, 10);
-            dg.Size = new System.Drawing.Size(380, 450); ;
-            dg.RowHeadersVisible = false;
-            // dg.DataSource = dt;
-
-
-            if (basicMode == false)
-            {
-
-                for (int i = 0; i < b.Bones.Count; i++)
-
+                for (int i = 0; i < targetFlver.Bones.Count; i++)
                 {
-                    // foreach (FLVER.Bone bn in b.Bones)
-                    FLVER.Bone bn = b.Bones[i];
-                    //Console.WriteLine(bn.Name);
-
-                    /* TextBox t = new TextBox();
-                     t.Size = new System.Drawing.Size(200, 15);
-                     t.Location = new System.Drawing.Point(70, currentY);
-                     t.Text = bn.Name;
-                     p.Controls.Add(t);
-
-                     Label l = new Label();
-                     l.Text = "[" + i + "]";
-                     l.Size = new System.Drawing.Size(50, 15);
-                     l.Location = new System.Drawing.Point(10, currentY + 5);
-                     p.Controls.Add(l);
-
-                     TextBox t2 = new TextBox();
-                     t2.Size = new System.Drawing.Size(70, 15);
-                     t2.Location = new System.Drawing.Point(270, currentY);
-                     t2.Text = bn.ParentIndex + "";
-                     p.Controls.Add(t2);
-
-                     TextBox t3 = new TextBox();
-                     t3.Size = new System.Drawing.Size(70, 15);
-                     t3.Location = new System.Drawing.Point(340, currentY);
-                     t3.Text = bn.ChildIndex + "";
-                     p.Controls.Add(t3);
-
-                     //bn.Translation
-                     TextBox t4 = new TextBox();
-                     t4.Size = new System.Drawing.Size(90, 15);
-                     t4.Location = new System.Drawing.Point(410, currentY);
-                     t4.ReadOnly = true;
-                     t4.Text = bn.Translation.X + "," + bn.Translation.Y + "," + bn.Translation.Z;
-                     p.Controls.Add(t4);
-
-                     TextBox t5 = new TextBox();
-                     t5.Size = new System.Drawing.Size(90, 15);
-                     t5.Location = new System.Drawing.Point(500, currentY);
-                     t5.ReadOnly = true;
-                     t5.Text = bn.Scale.X + "," + bn.Scale.Y + "," + bn.Scale.Z;
-                     p.Controls.Add(t5);
-
-                     TextBox t6 = new TextBox();
-                     t6.Size = new System.Drawing.Size(90, 15);
-                     t6.Location = new System.Drawing.Point(590, currentY);
-                     t6.ReadOnly = true;
-                     t6.Text = bn.Rotation.X + "," + bn.Rotation.Y + "," + bn.Rotation.Z;
-                     p.Controls.Add(t6);
-
-                     currentY += 20;
-                     sizeY += 20;
-                     boneNameList.Add(t);
-                     parentList.Add(t2);
-                     childList.Add(t3);*/
-
-                    DataGridViewRow row = new DataGridViewRow();
-                    {
-                        DataGridViewTextBoxCell textboxcell = new DataGridViewTextBoxCell();
-                        textboxcell.Value = "[" + i + "]";
-
-                        row.Cells.Add(textboxcell);
-                        textboxcell.ReadOnly = true;
-                    }
-                    {
-                        DataGridViewTextBoxCell textboxcell = new DataGridViewTextBoxCell();
-                        textboxcell.Value = bn.Name;
-
-                        row.Cells.Add(textboxcell);
-                        boneNameList.Add(textboxcell);
-                    }
-                    {
-                        DataGridViewTextBoxCell textboxcell = new DataGridViewTextBoxCell();
-                        textboxcell.Value = bn.ParentIndex + "";
-
-                        row.Cells.Add(textboxcell);
-                        boneParentList.Add(textboxcell);
-                    }
-                    {
-                        DataGridViewTextBoxCell textboxcell = new DataGridViewTextBoxCell();
-                        textboxcell.Value = bn.ChildIndex + "";
-
-                        row.Cells.Add(textboxcell);
-                        boneChildList.Add(textboxcell);
-                    }
-                    {
-                        DataGridViewTextBoxCell textboxcell = new DataGridViewTextBoxCell();
-                        textboxcell.Value = bn.Translation.X + "," + bn.Translation.Y + "," + bn.Translation.Z;
-
-                        row.Cells.Add(textboxcell);
-
-                    }
-                    {
-                        DataGridViewTextBoxCell textboxcell = new DataGridViewTextBoxCell();
-                        textboxcell.Value = bn.Scale.X + "," + bn.Scale.Y + "," + bn.Scale.Z;
-
-                        row.Cells.Add(textboxcell);
-
-                    }
-                    {
-                        DataGridViewTextBoxCell textboxcell = new DataGridViewTextBoxCell();
-                        textboxcell.Value = bn.Rotation.X + "," + bn.Rotation.Y + "," + bn.Rotation.Z;
-
-                        row.Cells.Add(textboxcell);
-
-                    }
-                    //DataGridViewComboBoxCell comboxcell = new DataGridViewComboBoxCell();
-                    //row.Cells.Add(comboxcell);
-                    dg.Rows.Add(row);
-
-                }
-            }
-
-            f.Size = new System.Drawing.Size(550, 700);
-            p.Size = new System.Drawing.Size(400, 530);
-
-            p.Controls.Add(dg);
-            currentY += 450;
-
-
-
-
-            //Swift value usage
-            /*
-            {
-                flexA = new TextBox();
-                flexA.Text = "1";
-                flexA.Location = new System.Drawing.Point(20,currentY);
-                p.Controls.Add(flexA);
-
-                currentY += 20;
-
-                flexB = new TextBox();
-                flexB.Text = "2";
-                flexB.Location = new System.Drawing.Point(20, currentY);
-                p.Controls.Add(flexB);
-
-                currentY += 20;
-
-                flexC = new TextBox();
-                flexC.Text = "3";
-                flexC.Location = new System.Drawing.Point(20, currentY);
-                p.Controls.Add(flexC);
-
-                currentY += 20;
-
-            }*/
-           
-
-            //f.Show();
-
-            Button button = new Button();
-            ButtonTips("Save the changes you made in the bones part.（Such as changing parents ID, bone names...）\n" +
-                "保存你在Bones部分做出的修改。(改骨骼名称以及父骨骼ID)", button);
-            button.Text = "Modify";
-            button.Location = new System.Drawing.Point(435, 50);
-            button.Click += (s, e) => {
-                for (int i2 = 0; i2 < b.Bones.Count; i2++)
-                {
-                    if (boneNameList.Count < b.Bones.Count)
+                    if (boneNameList.Count < targetFlver.Bones.Count)
                     {
                         MessageBox.Show("Bone does not match, something modified?\nWill not save bone info but will save other things.");
                         break;
                     }
-                    b.Bones[i2].Name = boneNameList[i2].Value.ToString();
-                    b.Bones[i2].ParentIndex = short.Parse(boneParentList[i2].Value.ToString());//parentList[i2].Text
-                    b.Bones[i2].ChildIndex = short.Parse(boneChildList[i2].Value.ToString());
+
+                    targetFlver.Bones[i].Name = boneNameList[i].Value.ToString();
+                    targetFlver.Bones[i].ParentIndex = short.Parse(parentList[i].ToString());
+                    targetFlver.Bones[i].ChildIndex = short.Parse(childList[i].ToString());
                 }
-                autoBackUp(); targetFlver.Write(flverName);
-                MessageBox.Show("Modification finished");
-            };
 
-            var serializer = new JavaScriptSerializer();
-            string serializedResult = serializer.Serialize(b.Bones);
+                autoBackUp(); 
+                targetFlver.Write(flverName);
 
+                MessageBox.Show("Bone changes saved.");
+            }
+            else
             {
-                Label l = new Label();
-                l.Text = "Bones Json text";
-                l.Size = new System.Drawing.Size(150, 15);
-                l.Location = new System.Drawing.Point(10, currentY + 5);
-                p.Controls.Add(l);
-                currentY += 20;
+                MessageBox.Show("No FLVER loaded currently.");
             }
 
+            return true;
+        }
 
-            TextBox tbones = new TextBox();
-            tbones.Multiline = true;
-            tbones.Size = new System.Drawing.Size(670, 600);
-            tbones.Location = new System.Drawing.Point(10, currentY + 5);
-            tbones.Text = serializedResult;
-
-            p.Controls.Add(tbones);
-
-            currentY += 600;
-
+        public static bool ImportJSON_Bones()
+        {
+            if (targetFlver != null)
             {
-                Label l = new Label();
-                l.Text = "Header Json text";
-                l.Size = new System.Drawing.Size(150, 15);
-                l.Location = new System.Drawing.Point(10, currentY + 5);
-                p.Controls.Add(l);
-                currentY += 20;
-            }
-
-            TextBox tbones2 = new TextBox();
-            tbones2.Multiline = true;
-            tbones2.Size = new System.Drawing.Size(670, 300);
-            tbones2.Location = new System.Drawing.Point(10, currentY + 5);
-            serializedResult = serializer.Serialize(b.Header);
-            tbones2.Text = serializedResult;
-
-            p.Controls.Add(tbones2);
-
-
-            Button button2 = new Button();
-            ButtonTips("Open the material window.\n" +
-                "打开材质编辑窗口。", button2);
-            button2.Text = "Material";
-            button2.Location = new System.Drawing.Point(435, 100);
-            button2.Click += (s, e) => {
-                ModelMaterial();
-            };
-
-            Button button3 = new Button();
-            ButtonTips("Open the mesh window.\n" +
-    "打开面片编辑(Mesh)窗口。", button3);
-            button3.Text = "Mesh";
-            button3.Location = new System.Drawing.Point(435, 150);
-            button3.Click += (s, e) => {
-                ModelMesh();
-            };
-            Button button4 = new Button();
-            ButtonTips("[Deprecated]Swap mesh & other info between one flver file with another. A new .flvern file will be generated.\n" +
-                "It is a deprecated method, I recommend you using Mesh->Attach method instead.\n" +
-"【过时】替换第一个Flver文件的模型信息为第二个，会生成一个.flvern文件。\n" +
-"现在这个方法已经过时了请用Mesh->Attach方法！", button4);
-            button4.Text = "Swap";
-            button4.Location = new System.Drawing.Point(435, 200);
-            button4.Click += (s, e) => {
-                ModelSwapModule();
-            };
-
-            Button button_dummy = new Button();
-            ButtonTips("Open the dummy window. Dummy contains the info about weapon art trail, weapon trail, damage point etc.\n" +
-"打开辅助点(Dummy)窗口。辅助点包含了武器的一些剑风位置，伤害位置之类的信息。", button_dummy);
-            button_dummy.Text = "Dummy";
-            button_dummy.Location = new System.Drawing.Point(435, 250);
-            button_dummy.Click += (s, e) => {
-                dummies();
-            };
-
-
-            Button button5 = new Button();
-
-            button5.Text = "ModifyJson";
-            ButtonTips("Save the json text you modified in bones and header json part to the flver file.\n" +
-"存储你修改的Json文本信息至你的Flver文件内。", button5);
-            button5.Location = new System.Drawing.Point(435, 300);
-            button5.Click += (s, e) => {
-                b.Bones = serializer.Deserialize<List<FLVER.Bone>>(tbones.Text);
-                b.Header = serializer.Deserialize<FLVER.FLVERHeader>(tbones2.Text);
-                autoBackUp(); targetFlver.Write(flverName);
-                MessageBox.Show("Json bone change completed! Please exit the program!", "Info");
-            };
-
-
-            Button button6 = new Button();
-
-            button6.Text = "LoadJson";
-            ButtonTips("Read external bone json file.\n" +
-"读取外部包含骨骼信息的json文件到你的flver文件内。", button6);
-            button6.Location = new System.Drawing.Point(435, 350);
-            button6.Click += (s, e) => {
-
-                var openFileDialog2 = new OpenFileDialog();
+                var serializer = new JavaScriptSerializer();
+                var json_file_dialog = new OpenFileDialog();
                 string res = "";
-                if (openFileDialog2.ShowDialog() == DialogResult.OK)
+
+                if (json_file_dialog.ShowDialog() == DialogResult.OK)
                 {
                     try
                     {
-                        var sr = new StreamReader(openFileDialog2.FileName);
+                        var sr = new StreamReader(json_file_dialog.FileName);
                         res = sr.ReadToEnd();
                         sr.Close();
-                        
+
                         var confirmResult = MessageBox.Show("Do you want to shift bone weights to new bone?",
                                  "Set",
                                  MessageBoxButtons.YesNo);
+
                         if (confirmResult == DialogResult.Yes)
                         {
-                            List <FLVER.Bone> newBones = serializer.Deserialize<List<FLVER.Bone>>(res);
+                            List<FLVER.Bone> newBones = serializer.Deserialize<List<FLVER.Bone>>(res);
 
                             BoneWeightShift(newBones);
 
                             targetFlver.Bones = newBones;
                         }
-                        else {
-
+                        else
+                        {
                             targetFlver.Bones = serializer.Deserialize<List<FLVER.Bone>>(res);
                         }
-
-
-
                         autoBackUp(); targetFlver.Write(flverName);
-                        MessageBox.Show("Bone change completed! Please exit the program!", "Info");
+                        MessageBox.Show("Bone JSON file applied.", "Info");
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show($"Security error.\n\nError message: {ex.Message}\n\n" +
+                        MessageBox.Show($"Could not read file.\n\nError message: {ex.Message}\n\n" +
                         $"Details:\n\n{ex.StackTrace}");
                     }
                 }
+            }
+            else
+            {
+                MessageBox.Show("No FLVER loaded currently.");
+            }
 
+            return true;
+        }
 
-            };
+        public static bool ExportJSON_Bones()
+        {
+            if (targetFlver != null)
+            {
+                var serializer = new JavaScriptSerializer();
+                exportJson(FormatOutput(serializer.Serialize(targetFlver.Bones)), "Bones.json", "Bones json text exported!");
+            }
+            else
+            {
+                MessageBox.Show("No FLVER loaded currently.");
+            }
 
-            Button button6ex = new Button();
+            return true;
+        }
 
-            button6ex.Text = "ExportJson";
-            ButtonTips("Export bones json text to a file.\n" +
-"导出当前骨骼信息到一个json文件内。", button6ex);
-            button6ex.Location = new System.Drawing.Point(435, 400);
-            button6ex.Click += (s, e) => {
-
-                /*var openFileDialog2 = new SaveFileDialog();
-                openFileDialog2.FileName = "Bones.json";
-                string res = "";
-                if (openFileDialog2.ShowDialog() == DialogResult.OK)
-                {
-                    try
-                    {
-
-                        var sw = new StreamWriter(openFileDialog2.FileName);
-                        sw.Write(FormatOutput(serializer.Serialize(b.Bones)));
-                        sw.Close();
-                        MessageBox.Show("Bones json text exported!", "Info");
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"Security error.\n\nError message: {ex.Message}\n\n" +
-                        $"Details:\n\n{ex.StackTrace}");
-                    }
-                }*/
-                exportJson(FormatOutput(serializer.Serialize(b.Bones)),"Bones.json", "Bones json text exported!");
-
-            };
-
-            Button button7 = new Button();
-            ButtonTips("Fix some bone problems when importing bloodborne models to Sekiro.\n" +
-"修复一些血源诅咒转只狼后模型骨骼不对的问题。", button7);
-            button7.Text = "BB_BoneFix";
-            button7.Location = new System.Drawing.Point(435, 450);
-            button7.Click += (s, e) => {
-
+        public static bool BB_Bone_Fix()
+        {
+            if (targetFlver != null)
+            {
                 var confirmResult = MessageBox.Show("Do you want to set pelvis bone from BB to Sekiro style?",
-                                     "Set",
-                                     MessageBoxButtons.YesNo);
+                                        "Set",
+                                        MessageBoxButtons.YesNo);
+
                 if (confirmResult == DialogResult.Yes)
                 {
                     // If 'Yes', do something here.
@@ -1208,7 +390,6 @@ namespace FLVER_EDITOR
                             {
                                 if (targetFlver.Bones[j].ParentIndex == i)
                                 {
-
                                     //It seems that X controls foot:left right rotate dir : -- means left,
                                     //I recommend X -= 0.3
                                     targetFlver.Bones[j].Rotation.Z = targetFlver.Bones[j].Rotation.Z + (float)Math.PI;
@@ -1241,7 +422,8 @@ namespace FLVER_EDITOR
                             targetFlver.Bones[i].Translation.Z = 0.02f;
 
                             targetFlver.Bones[i].Rotation.Y -= 0.01f;
-                        } else if (targetFlver.Bones[i].Name == "R_Calf" || targetFlver.Bones[i].Name == "L_Calf")
+                        }
+                        else if (targetFlver.Bones[i].Name == "R_Calf" || targetFlver.Bones[i].Name == "L_Calf")
                         {
                             targetFlver.Bones[i].Scale.X = 1.1f;
                         }
@@ -1260,9 +442,10 @@ namespace FLVER_EDITOR
                     // If 'No', do something here.
                 }
 
-                var confirmResult3 = MessageBox.Show("[OPTIONAL]Do you want to modify clavicle bones to change shoulder at sekiro?\r\nThis is eperiemental and may cause problems.",
+                var confirmResult3 = MessageBox.Show("[OPTIONAL] Do you want to modify clavicle bones to change shoulder at sekiro?\r\nThis is experimental and may cause problems.",
                                     "Set",
                                     MessageBoxButtons.YesNo);
+
                 if (confirmResult3 == DialogResult.Yes)
                 {
                     // If 'Yes', do something here.
@@ -1299,126 +482,477 @@ namespace FLVER_EDITOR
                         {
                             bone.Scale.X = 1.1f;
                         }
+                    }
+                }
+
+                autoBackUp(); targetFlver.Write(flverName);
+
+                MessageBox.Show("Bloodborne FLVER has been modified for usage in Sekiro.", "Info");
+            }
+            else
+            {
+                MessageBox.Show("No FLVER loaded currently.");
+            }
+
+            return true;
+        }
+
+        public static bool VieWBufferLayout()
+        {
+            if (targetFlver != null)
+            {
+                bufferLayout();
+            }
+            else
+            {
+                MessageBox.Show("No FLVER loaded currently.");
+            }
+
+            return true;
+        }
+
+        public static void LoadMaterialTab(Form current_form)
+        {
+
+            System.Windows.Forms.Form f = new System.Windows.Forms.Form();
+            f.Text = "Material";
+            Panel p = new Panel();
+            int sizeY = 50;
+            int currentY = 10;
+            var boneNameList = new List<TextBox>();
+            parentList = new List<short>();
+            childList = new List<short>();
+            //p.AutoSize = true;
+            p.AutoScroll = true;
+            f.Controls.Add(p);
 
 
+            {
+                Label l = new Label();
+                l.Text = "index";
+                l.Size = new System.Drawing.Size(50, 15);
+                l.Location = new System.Drawing.Point(10, currentY + 5);
+                p.Controls.Add(l);
+            }
+            {
+                Label l = new Label();
+                l.Text = "name";
+                l.Size = new System.Drawing.Size(150, 15);
+                l.Location = new System.Drawing.Point(70, currentY + 5);
+                p.Controls.Add(l);
+            }
+            {
+                Label l = new Label();
+                l.Text = "type";
+                l.Size = new System.Drawing.Size(150, 15);
+                l.Location = new System.Drawing.Point(270, currentY + 5);
+                p.Controls.Add(l);
+            }
+            {
+                Label l = new Label();
+                l.Text = "texture path";
+                l.Size = new System.Drawing.Size(150, 15);
+                l.Location = new System.Drawing.Point(340, currentY + 5);
+                p.Controls.Add(l);
+            }
+            currentY += 20;
 
-                        //R_Calf
 
+            for (int i = 0; i < targetFlver.Materials.Count; i++)
+
+            {
+                // foreach (FLVER.Bone bn in b.Bones)
+                FLVER.Material bn = targetFlver.Materials[i];
+                //Console.WriteLine(bn.Name);
+
+                TextBox t = new TextBox();
+                t.Size = new System.Drawing.Size(200, 15);
+                t.Location = new System.Drawing.Point(70, currentY);
+                t.Text = bn.Name;
+                p.Controls.Add(t);
+
+                Label l = new Label();
+                l.Text = "[" + i + "]";
+                l.Size = new System.Drawing.Size(50, 15);
+                l.Location = new System.Drawing.Point(10, currentY + 5);
+                p.Controls.Add(l);
+
+                TextBox t2 = new TextBox();
+                t2.Size = new System.Drawing.Size(70, 15);
+                t2.Location = new System.Drawing.Point(270, currentY);
+                t2.Text = bn.Flags + ",GX" + bn.GXBytes + ",Unk" + bn.Unk18;
+                p.Controls.Add(t2);
+
+                /* TextBox t3 = new TextBox();
+                 t3.Size = new System.Drawing.Size(770, 15);
+                 t3.Location = new System.Drawing.Point(340, currentY);
+                 string allMat = "";
+                 foreach (FLVER.Texture tex in bn.Textures)
+                 {
+                     if (tex.Type == "g_DiffuseTexture")
+                      {
+                          tex.Type = "Character_AMSN_snp_Texture2D_2_AlbedoMap_0";
+                      }
+                      if (tex.Type == "g_BumpmapTexture")
+                      {
+                          tex.Type = "Character_AMSN_snp_Texture2D_7_NormalMap_4";
+                      }
+                      if (tex.Type == "g_SpecularTexture")
+                      {
+                          tex.Type = "Character_AMSN_snp_Texture2D_0_ReflectanceMap_0";
+                      }
+                      if (tex.Type == "g_ShininessTexture")
+                      {
+                          tex.Type = "Character_AMSN_snp_Texture2D_0_ReflectanceMap_0";
+                      }
+
+                     allMat += "{" + tex.Type + "->" + tex.Path + "," + tex.Unk10 + "," + tex.Unk11 + "," + tex.Unk14 + "," + tex.Unk18 + "," + tex.Unk1C + "}";
+                 }
+                 t3.Text = allMat;
+                 p.Controls.Add(t3);*/
+
+                Button buttonCheck = new Button();
+                int btnI = i;
+                buttonCheck.Text = "Edit";
+                ButtonTips("Quick edit the texture path and basic information of this material." +
+                    "\r\n 快速编辑此材质的贴图路径以及基础信息。", buttonCheck);
+                buttonCheck.Size = new System.Drawing.Size(70, 20);
+                buttonCheck.Location = new System.Drawing.Point(350, currentY);
+
+                buttonCheck.Click += (s, e) => {
+
+                    //useCheckingMesh = true;
+                    // checkingMeshNum = btnI;
+
+                    materialQuickEdit(targetFlver.Materials[btnI], btnI);
+
+                    //mes = jse.Deserialize<FLVER.Mesh>(jse.Serialize(mes));
+                    // mes.Vertices = null;
+
+                    //updateVertices();
+                };
+
+                p.Controls.Add(buttonCheck);
+
+
+                currentY += 20;
+                sizeY += 20;
+                /*tList.Add(t);
+                parentList.Add(t2);
+                childList.Add(t3);*/
+            }
+
+            /*  var xmlserializer = new XmlSerializer(typeof( List<FLVER.Material>));
+              var stringWriter = new StringWriter();
+              string res;
+              using (var writer = XmlWriter.Create(stringWriter))
+              {
+                  xmlserializer.Serialize(writer, targetFlver.Materials);
+                res = stringWriter.ToString();
+              }*/
+
+
+            var serializer = new JavaScriptSerializer();
+            string serializedResult = serializer.Serialize(targetFlver.Materials);
+
+
+            TextBox tbones = new TextBox();
+            tbones.Multiline = true;
+            tbones.Size = new System.Drawing.Size(670, 600);
+            tbones.Location = new System.Drawing.Point(10, currentY + 20);
+            tbones.Text = serializedResult;
+
+            p.Controls.Add(tbones);
+
+            int btnY = 50;
+
+            Button button = new Button();
+            button.Text = "Modify";
+            ButtonTips("Save materials' modification to the flver file.\n" +
+               "保存对材质的修改至Flver文件中。", button);
+            button.Location = new System.Drawing.Point(650, btnY);
+            button.Click += (s, e) => {
+                /*  for (int i = 0; i < b.Bones.Count; i++)
+                  {
+                      b.Bones[i].Name = tList[i].Text;
+                      b.Bones[i].ParentIndex = short.Parse(parentList[i].Text);
+                      b.Bones[i].ChildIndex = short.Parse(childList[i].Text);
+                  }*/
+                autoBackUp(); targetFlver.Write(flverName);
+            };
+
+            btnY += 50;
+
+            Button button2 = new Button();
+            ButtonTips("Save json text's modification to the flver file.\n" +
+           "保存对json文本的修改至Flver文件中。", button2);
+            button2.Text = "ModifyJson";
+            button2.Location = new System.Drawing.Point(650, btnY);
+            button2.Click += (s, e) => {
+                targetFlver.Materials = serializer.Deserialize<List<FLVER.Material>>(tbones.Text);
+                autoBackUp(); targetFlver.Write(flverName);
+                MessageBox.Show("Material change completed! Please exit the program!", "Info");
+            };
+            btnY += 50;
+
+            Button button3 = new Button();
+            ButtonTips("Import external Json text file and save to the flver file.\n" +
+          "导入外部的Json文本并保存至Flver文件中。", button3);
+            button3.Text = "LoadJson";
+            button3.Location = new System.Drawing.Point(650, btnY);
+            button3.Click += (s, e) => {
+
+                var openFileDialog1 = new OpenFileDialog();
+                string res = "";
+                if (openFileDialog1.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        var sr = new StreamReader(openFileDialog1.FileName);
+                        res = sr.ReadToEnd();
+                        sr.Close();
+                        targetFlver.Materials = serializer.Deserialize<List<FLVER.Material>>(res);
+                        autoBackUp(); targetFlver.Write(flverName);
+                        MessageBox.Show("Material change completed! Please exit the program!", "Info");
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Security error.\n\nError message: {ex.Message}\n\n" +
+                        $"Details:\n\n{ex.StackTrace}");
                     }
                 }
 
 
+            };
+            Button button3ex = new Button();
+            btnY += 50;
+
+
+            button3ex.Text = "ExportJson";
+            ButtonTips("Export material json text to a file.\n" +
+"导出当前材质信息到一个json文件内。", button3ex);
+            button3ex.Location = new System.Drawing.Point(650, btnY);
+            button3ex.Click += (s, e) => {
+
+
+                exportJson(FormatOutput(serializer.Serialize(targetFlver.Materials)), "Material.json", "Material json text exported!");
+
+            };
+            btnY += 50;
+
+
+            Button buttonARSN = new Button();
+            ButtonTips("Convert materials (mtd path) to Sekiro/DS3 standard M[ARSN].mtd\n" +
+          "替换所有的材质(mtd)为标准的M[ARSN]材质。", buttonARSN);
+            buttonARSN.Text = "M[ARSN]";
+            buttonARSN.Location = new System.Drawing.Point(650, btnY);
+            buttonARSN.Click += (s, e) => {
+
+                foreach (FLVER.Material m in targetFlver.Materials)
+                {
+                    var confirmResult = MessageBox.Show("Convert <" + m.Name + ">'s material to M[ARSN].mtd?",
+                                   "Convertion",
+                                   MessageBoxButtons.YesNo);
+                    if (confirmResult == DialogResult.No)
+                    {
+                        continue;
+                    }
+                    if (m.MTD.IndexOf("_e") >= 0)
+                    {
+                        m.MTD = "M[ARSN]_e.mtd";
+                    }
+                    else
+                    {
+                        m.MTD = "M[ARSN].mtd";
+                    }
+
+                    foreach (FLVER.Texture t in m.Textures)
+                    {
+                        if (t.Path.IndexOf("_a.tif") >= 0)
+                        {
+                            t.Type = "g_DiffuseTexture";
+                        }
+                        else if (t.Path.IndexOf("_n.tif") >= 0)
+                        {
+                            t.Type = "g_BumpmapTexture";
+                        }
+                        else if (t.Path.IndexOf("_r.tif") >= 0)
+                        {
+                            t.Type = "g_SpecularTexture";
+                        }
+
+                    }
+                }
                 autoBackUp(); targetFlver.Write(flverName);
+                MessageBox.Show("Material change completed! Please exit the program!", "Info");
 
-                MessageBox.Show("BB pelvis bone fix completed! Please exit the program!", "Info");
-
-
-            };
-
-            Button button8 = new Button();
-            ButtonTips("Check the flver file's buffer layout, which contains the rules of how to write flver file.\n" +
-"检查Flver文件的buffer layout（一种存储如何写入顶点，骨骼之类方法的数据结构）。", button8);
-            button8.Text = "BufferLayout";
-            button8.Font = new System.Drawing.Font(button.Font.FontFamily, 7);
-            button8.Location = new System.Drawing.Point(435, 500);
-            //button8.AutoSize = true;
-            button8.Click += (s, e) => {
-
-                bufferLayout();
 
 
             };
+            btnY += 50;
 
-            Button button9 = new Button();
 
-            button9.Text = "ImportModel";
-            ButtonTips("Import external model file, such as FBX, DAE, OBJ. Caution, only FBX file can keep the bone weight.\n" +
-                "UV, normal, tangent can be kept, but you still need to manually modify material information in Material window.\n" +
-                "Also,experimentally support meshes that has more than 65535 vertices.\n" +
-"导入外部模型文件，比如Fbx,Dae,Obj。但注意只有Fbx文件可以支持导入骨骼权重。\n" +
-"可以保留UV贴图坐标，切线法线的信息，但你还是得手动修改贴图信息的。\n" +
-"另外，实验性质的加入了导入超过65535个顶点的面片集的功能。", button9);
-            button9.Font = new System.Drawing.Font(button.Font.FontFamily, 8);
-            //button9.AutoSize = true;
-            button9.Location = new System.Drawing.Point(435, 550);
-            button9.Click += (s, e) => {
+            Button buttonDMY = new Button();
+            ButtonTips("[Sekiro only]Convert materials (mtd path) to Sekiro standard c9990_dummy.mtd\n" +
+          "【仅限只狼】替换材质(mtd)为只狼的c9990_dummy材质。", buttonDMY);
+            buttonDMY.Text = "M[DUMMY]";
+            buttonDMY.Location = new System.Drawing.Point(650, btnY);
+            buttonDMY.Click += (s, e) => {
 
-                //importObj();
-                importFBX();
+                foreach (FLVER.Material m in targetFlver.Materials)
+                {
+                    var confirmResult = MessageBox.Show("Convert <" + m.Name + ">'s material to c9990_dummy.mtd?",
+                                   "Convertion",
+                                   MessageBoxButtons.YesNo);
+                    if (confirmResult == DialogResult.No)
+                    {
+                        continue;
+                    }
+
+                    if (m.MTD.IndexOf("_e") >= 0)
+                    {
+                        m.MTD = "N:\\NTC\\data\\Material\\mtd\\character\\c9990_dummy.mtd";
+                    }
+                    else
+                    {
+                        m.MTD = "N:\\NTC\\data\\Material\\mtd\\character\\c9990_dummy.mtd";
+                    }
+
+                    foreach (FLVER.Texture t in m.Textures)
+                    {
+                        if (t.Path.IndexOf("_a.tif") >= 0)
+                        {
+                            t.Type = "Character_AMSN_snp_Texture2D_2_AlbedoMap_0";
+                        }
+                        else if (t.Path.IndexOf("_n.tif") >= 0)
+                        {
+                            t.Type = "Character_AMSN_snp_Texture2D_7_NormalMap_4";
+                        }
+                        else if (t.Path.IndexOf("_r.tif") >= 0)
+                        {
+                            t.Type = "g_SpecularTexture";
+                        }
+
+                    }
+                }
+                autoBackUp(); targetFlver.Write(flverName);
+                MessageBox.Show("Material change completed! Please exit the program!", "Info");
+
+
+
             };
+            btnY += 50;
 
-            Button button10 = new Button();
+            Button tpfXmlEdit = new Button();
+            ButtonTips("Auto-edit the xml file depacked from the /tpf texture file. So that you don't need to manually modify it to add new textures.\n" +
+          "自动编辑.tpf贴图文件用yabber解包出来的xml文件。", tpfXmlEdit);
+            tpfXmlEdit.Text = "Xml Edit";
+            tpfXmlEdit.Location = new System.Drawing.Point(650, btnY);
+            tpfXmlEdit.Click += (s, e) => {
 
-            button10.Text = "Export DAE";
-            ButtonTips("<Experimental> Export current scene to DAE (Collada) 3d model file.\n" +
-"<实验性质>到出场景至DAE模型文件。", button10);
-            button10.Location = new System.Drawing.Point(435, 600);
-            button10.Click += (s, e) => {
-
-                ExportFBX();
+                XmlEdit();
 
             };
+            btnY += 50;
 
-            Label thanks = new Label();
-            thanks.Text = "FLVER Editor " + version + " Author: Forsakensilver(遗忘的银灵) Special thanks: TKGP & Katalash ";
-            thanks.Location = new System.Drawing.Point(10, f.Size.Height - 60);
-            thanks.Size = new System.Drawing.Size(700, 50);
 
+            Button mtdConvert = new Button();
+            ButtonTips("Rename all the materials (mtd path) to the name you want.\n" +
+          "自动转换所有材质路径为你输入的值。", mtdConvert);
+            mtdConvert.Text = "M. Rename";
+            mtdConvert.Location = new System.Drawing.Point(650, btnY);
+            mtdConvert.Click += (s, e) => {
+                string res = "M[ARSN].mtd";
+                DialogResult dr = BasicTools.ShowInputDialog(ref res);
+                if (dr == DialogResult.Cancel) { return; }
+                foreach (var v in targetFlver.Materials)
+                {
+                    v.MTD = res;
+
+                }
+                autoBackUp(); targetFlver.Write(flverName);
+                MessageBox.Show("Material change completed! Please exit the program!", "Info");
+
+            };
+            btnY += 50;
+
+
+            f.Size = new System.Drawing.Size(750, 600);
+            p.Size = new System.Drawing.Size(600, 530);
             f.Resize += (s, e) =>
             {
                 p.Size = new System.Drawing.Size(f.Size.Width - 150, f.Size.Height - 70);
-                button.Location = new System.Drawing.Point(f.Size.Width - 115, 50);
-                button2.Location = new System.Drawing.Point(f.Size.Width - 115, 100);
-                button3.Location = new System.Drawing.Point(f.Size.Width - 115, 150);
-                button4.Location = new System.Drawing.Point(f.Size.Width - 115, 200);
-                button_dummy.Location = new System.Drawing.Point(f.Size.Width - 115, 250);
-                button5.Location = new System.Drawing.Point(f.Size.Width - 115, 300);
-                button6.Location = new System.Drawing.Point(f.Size.Width - 115, 350);
-                button6ex.Location = new System.Drawing.Point(f.Size.Width - 115, 400);
-
-                button7.Location = new System.Drawing.Point(f.Size.Width - 115, 450);
-                button8.Location = new System.Drawing.Point(f.Size.Width - 115, 500);
-                button9.Location = new System.Drawing.Point(f.Size.Width - 115, 550);
-                button10.Location = new System.Drawing.Point(f.Size.Width - 115, 600);
-
-                thanks.Location = new System.Drawing.Point(10, f.Size.Height - 60);
-                dg.Size = new System.Drawing.Size(f.Size.Width - 200, 450);
+                button.Location = new System.Drawing.Point(f.Size.Width - 100, 50);
+                button2.Location = new System.Drawing.Point(f.Size.Width - 100, 100);
+                button3.Location = new System.Drawing.Point(f.Size.Width - 100, 150);
+                button3ex.Location = new System.Drawing.Point(f.Size.Width - 100, 200);
+                buttonARSN.Location = new System.Drawing.Point(f.Size.Width - 100, 250);
+                buttonDMY.Location = new System.Drawing.Point(f.Size.Width - 100, 300);
+                tpfXmlEdit.Location = new System.Drawing.Point(f.Size.Width - 100, 350);
+                mtdConvert.Location = new System.Drawing.Point(f.Size.Width - 100, 400);
             };
-            p.Size = new System.Drawing.Size(f.Size.Width - 150, f.Size.Height - 70);
 
-            if (basicMode == false)
-                f.Controls.Add(button);
-
+            f.Controls.Add(button);
             f.Controls.Add(button2);
             f.Controls.Add(button3);
-            f.Controls.Add(button4);
-            f.Controls.Add(button_dummy);
-            f.Controls.Add(button5);
-            f.Controls.Add(button6);
-            f.Controls.Add(button6ex);
-            f.Controls.Add(button7);
-            f.Controls.Add(button8);
-            f.Controls.Add(button9);
-
-            f.Controls.Add(thanks);
-            f.Controls.Add(button10);
-            f.BringToFront();
-            f.WindowState = FormWindowState.Normal;
-            Application.Run(f);
+            f.Controls.Add(button3ex);
+            f.Controls.Add(buttonARSN);
+            f.Controls.Add(buttonDMY);
+            f.Controls.Add(tpfXmlEdit);
+            f.Controls.Add(mtdConvert);
+            f.ShowDialog();
+            //Application.Run(f);
 
 
-            //ModelMaterial();
-            //Application.Exit();
+
+        }
+        
+        public static void LoadMeshTab(Form current_form)
+        {
+            ModelMesh();
         }
 
-        private static void Select_Click(object sender, EventArgs e)
+        public static void LoadDummyTab(Form current_form)
         {
-            throw new NotImplementedException();
+            dummies();
+        }
+
+        public static bool ImportModel()
+        {
+            /*
+            "Import external model file, such as FBX, DAE, OBJ. Caution, only FBX file can keep the bone weight.\n" +
+            "UV, normal, tangent can be kept, but you still need to manually modify material information in Material window.\n" +
+            "Also,experimentally support meshes that has more than 65535 vertices.\n"
+            */
+            if (targetFlver != null)
+            {
+                importFBX();
+            }
+            else
+            {
+                MessageBox.Show("No FLVER loaded currently.");
+            }
+
+            return true;
+        }
+
+        public static bool ExportModel()
+        {
+            if (targetFlver != null)
+            {
+                ExportFBX();
+            }
+            else
+            {
+                MessageBox.Show("No FLVER loaded currently.");
+            }
+
+            return true;
         }
 
         static void dummies()
         {
-            Form f = new Form();
+            System.Windows.Forms.Form f = new System.Windows.Forms.Form();
             f.Text = "Dummies";
             Panel p = new Panel();
             int currentY2 = 10;
@@ -1668,7 +1202,7 @@ namespace FLVER_EDITOR
 
         static void bufferLayout()
         {
-            Form f = new Form();
+            System.Windows.Forms.Form f = new System.Windows.Forms.Form();
             f.Text = "Layout";
             Panel p = new Panel();
             int currentY2 = 10;
@@ -1775,400 +1309,6 @@ namespace FLVER_EDITOR
             f.ShowDialog();
         }
 
-        static void ModelMaterial() {
-
-            Form f = new Form();
-            f.Text = "Material";
-            Panel p = new Panel();
-            int sizeY = 50;
-            int currentY = 10;
-            var boneNameList = new List<TextBox>();
-            parentList = new List<TextBox>();
-            childList = new List<TextBox>();
-            //p.AutoSize = true;
-            p.AutoScroll = true;
-            f.Controls.Add(p);
-
-
-            {
-                Label l = new Label();
-                l.Text = "index";
-                l.Size = new System.Drawing.Size(50, 15);
-                l.Location = new System.Drawing.Point(10, currentY + 5);
-                p.Controls.Add(l);
-            }
-            {
-                Label l = new Label();
-                l.Text = "name";
-                l.Size = new System.Drawing.Size(150, 15);
-                l.Location = new System.Drawing.Point(70, currentY + 5);
-                p.Controls.Add(l);
-            }
-            {
-                Label l = new Label();
-                l.Text = "type";
-                l.Size = new System.Drawing.Size(150, 15);
-                l.Location = new System.Drawing.Point(270, currentY + 5);
-                p.Controls.Add(l);
-            }
-            {
-                Label l = new Label();
-                l.Text = "texture path";
-                l.Size = new System.Drawing.Size(150, 15);
-                l.Location = new System.Drawing.Point(340, currentY + 5);
-                p.Controls.Add(l);
-            }
-            currentY += 20;
-
-
-            for (int i = 0; i < targetFlver.Materials.Count; i++)
-
-            {
-                // foreach (FLVER.Bone bn in b.Bones)
-                FLVER.Material bn = targetFlver.Materials[i];
-                //Console.WriteLine(bn.Name);
-
-                TextBox t = new TextBox();
-                t.Size = new System.Drawing.Size(200, 15);
-                t.Location = new System.Drawing.Point(70, currentY);
-                t.Text = bn.Name;
-                p.Controls.Add(t);
-
-                Label l = new Label();
-                l.Text = "[" + i + "]";
-                l.Size = new System.Drawing.Size(50, 15);
-                l.Location = new System.Drawing.Point(10, currentY + 5);
-                p.Controls.Add(l);
-
-                TextBox t2 = new TextBox();
-                t2.Size = new System.Drawing.Size(70, 15);
-                t2.Location = new System.Drawing.Point(270, currentY);
-                t2.Text = bn.Flags + ",GX" + bn.GXBytes + ",Unk" + bn.Unk18;
-                p.Controls.Add(t2);
-
-                /* TextBox t3 = new TextBox();
-                 t3.Size = new System.Drawing.Size(770, 15);
-                 t3.Location = new System.Drawing.Point(340, currentY);
-                 string allMat = "";
-                 foreach (FLVER.Texture tex in bn.Textures)
-                 {
-                     if (tex.Type == "g_DiffuseTexture")
-                      {
-                          tex.Type = "Character_AMSN_snp_Texture2D_2_AlbedoMap_0";
-                      }
-                      if (tex.Type == "g_BumpmapTexture")
-                      {
-                          tex.Type = "Character_AMSN_snp_Texture2D_7_NormalMap_4";
-                      }
-                      if (tex.Type == "g_SpecularTexture")
-                      {
-                          tex.Type = "Character_AMSN_snp_Texture2D_0_ReflectanceMap_0";
-                      }
-                      if (tex.Type == "g_ShininessTexture")
-                      {
-                          tex.Type = "Character_AMSN_snp_Texture2D_0_ReflectanceMap_0";
-                      }
-
-                     allMat += "{" + tex.Type + "->" + tex.Path + "," + tex.Unk10 + "," + tex.Unk11 + "," + tex.Unk14 + "," + tex.Unk18 + "," + tex.Unk1C + "}";
-                 }
-                 t3.Text = allMat;
-                 p.Controls.Add(t3);*/
-
-                Button buttonCheck = new Button();
-                int btnI = i;
-                buttonCheck.Text = "Edit";
-                ButtonTips("Quick edit the texture path and basic information of this material." +
-                    "\r\n 快速编辑此材质的贴图路径以及基础信息。",buttonCheck);
-                buttonCheck.Size = new System.Drawing.Size(70, 20);
-                buttonCheck.Location = new System.Drawing.Point(350, currentY);
-
-                buttonCheck.Click += (s, e) => {
-
-                    //useCheckingMesh = true;
-                    // checkingMeshNum = btnI;
-
-                    materialQuickEdit(targetFlver.Materials[btnI],btnI);
-
-                    //mes = jse.Deserialize<FLVER.Mesh>(jse.Serialize(mes));
-                    // mes.Vertices = null;
-                    
-                    //updateVertices();
-                };
-
-                p.Controls.Add(buttonCheck);
-
-
-                currentY += 20;
-                sizeY += 20;
-                /*tList.Add(t);
-                parentList.Add(t2);
-                childList.Add(t3);*/
-            }
-
-            /*  var xmlserializer = new XmlSerializer(typeof( List<FLVER.Material>));
-              var stringWriter = new StringWriter();
-              string res;
-              using (var writer = XmlWriter.Create(stringWriter))
-              {
-                  xmlserializer.Serialize(writer, targetFlver.Materials);
-                res = stringWriter.ToString();
-              }*/
-
-
-            var serializer = new JavaScriptSerializer();
-            string serializedResult = serializer.Serialize(targetFlver.Materials);
-
-
-            TextBox tbones = new TextBox();
-            tbones.Multiline = true;
-            tbones.Size = new System.Drawing.Size(670, 600);
-            tbones.Location = new System.Drawing.Point(10, currentY + 20);
-            tbones.Text = serializedResult;
-
-            p.Controls.Add(tbones);
-
-            int btnY = 50;
-
-            Button button = new Button();
-            button.Text = "Modify";
-            ButtonTips("Save materials' modification to the flver file.\n" +
-               "保存对材质的修改至Flver文件中。", button);
-            button.Location = new System.Drawing.Point(650, btnY);
-            button.Click += (s, e) => {
-                /*  for (int i = 0; i < b.Bones.Count; i++)
-                  {
-                      b.Bones[i].Name = tList[i].Text;
-                      b.Bones[i].ParentIndex = short.Parse(parentList[i].Text);
-                      b.Bones[i].ChildIndex = short.Parse(childList[i].Text);
-                  }*/
-                autoBackUp(); targetFlver.Write(flverName);
-            };
-
-            btnY += 50;
-
-            Button button2 = new Button();
-            ButtonTips("Save json text's modification to the flver file.\n" +
-           "保存对json文本的修改至Flver文件中。", button2);
-            button2.Text = "ModifyJson";
-            button2.Location = new System.Drawing.Point(650, btnY);
-            button2.Click += (s, e) => {
-                targetFlver.Materials = serializer.Deserialize<List<FLVER.Material>>(tbones.Text);
-                autoBackUp(); targetFlver.Write(flverName);
-                MessageBox.Show("Material change completed! Please exit the program!", "Info");
-            };
-            btnY += 50;
-
-            Button button3 = new Button();
-            ButtonTips("Import external Json text file and save to the flver file.\n" +
-          "导入外部的Json文本并保存至Flver文件中。", button3);
-            button3.Text = "LoadJson";
-            button3.Location = new System.Drawing.Point(650, btnY);
-            button3.Click += (s, e) => {
-
-                var openFileDialog1 = new OpenFileDialog();
-                string res = "";
-                if (openFileDialog1.ShowDialog() == DialogResult.OK)
-                {
-                    try
-                    {
-                        var sr = new StreamReader(openFileDialog1.FileName);
-                        res = sr.ReadToEnd();
-                        sr.Close();
-                        targetFlver.Materials = serializer.Deserialize<List<FLVER.Material>>(res);
-                        autoBackUp(); targetFlver.Write(flverName);
-                        MessageBox.Show("Material change completed! Please exit the program!", "Info");
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"Security error.\n\nError message: {ex.Message}\n\n" +
-                        $"Details:\n\n{ex.StackTrace}");
-                    }
-                }
-
-
-            };
-            Button button3ex = new Button();
-            btnY += 50;
-
-
-            button3ex.Text = "ExportJson";
-            ButtonTips("Export material json text to a file.\n" +
-"导出当前材质信息到一个json文件内。", button3ex);
-            button3ex.Location = new System.Drawing.Point(650, btnY);
-            button3ex.Click += (s, e) => {
-
-             
-                exportJson(FormatOutput(serializer.Serialize(targetFlver.Materials)), "Material.json", "Material json text exported!");
-
-            };
-            btnY += 50;
-
-
-            Button buttonARSN = new Button();
-            ButtonTips("Convert materials (mtd path) to Sekiro/DS3 standard M[ARSN].mtd\n" +
-          "替换所有的材质(mtd)为标准的M[ARSN]材质。", buttonARSN);
-            buttonARSN.Text = "M[ARSN]";
-            buttonARSN.Location = new System.Drawing.Point(650, btnY);
-            buttonARSN.Click += (s, e) => {
-
-                foreach (FLVER.Material m in targetFlver.Materials)
-                {
-                    var confirmResult = MessageBox.Show("Convert <" + m.Name + ">'s material to M[ARSN].mtd?",
-                                   "Convertion",
-                                   MessageBoxButtons.YesNo);
-                    if (confirmResult == DialogResult.No)
-                    {
-                        continue;
-                    }
-                    if (m.MTD.IndexOf("_e") >= 0)
-                    {
-                        m.MTD = "M[ARSN]_e.mtd";
-                    }
-                    else
-                    {
-                        m.MTD = "M[ARSN].mtd";
-                    }
-
-                    foreach (FLVER.Texture t in m.Textures)
-                    {
-                        if (t.Path.IndexOf("_a.tif") >= 0)
-                        {
-                            t.Type = "g_DiffuseTexture";
-                        }
-                        else if (t.Path.IndexOf("_n.tif") >= 0)
-                        {
-                            t.Type = "g_BumpmapTexture";
-                        }
-                        else if (t.Path.IndexOf("_r.tif") >= 0)
-                        {
-                            t.Type = "g_SpecularTexture";
-                        }
-
-                    }
-                }
-                autoBackUp(); targetFlver.Write(flverName);
-                MessageBox.Show("Material change completed! Please exit the program!", "Info");
-
-
-
-            };
-            btnY += 50;
-
-
-            Button buttonDMY = new Button();
-            ButtonTips("[Sekiro only]Convert materials (mtd path) to Sekiro standard c9990_dummy.mtd\n" +
-          "【仅限只狼】替换材质(mtd)为只狼的c9990_dummy材质。", buttonDMY);
-            buttonDMY.Text = "M[DUMMY]";
-            buttonDMY.Location = new System.Drawing.Point(650, btnY);
-            buttonDMY.Click += (s, e) => {
-
-                foreach (FLVER.Material m in targetFlver.Materials)
-                {
-                    var confirmResult = MessageBox.Show("Convert <" + m.Name + ">'s material to c9990_dummy.mtd?",
-                                   "Convertion",
-                                   MessageBoxButtons.YesNo);
-                    if (confirmResult == DialogResult.No)
-                    {
-                        continue;
-                    }
-
-                    if (m.MTD.IndexOf("_e") >= 0)
-                    {
-                        m.MTD = "N:\\NTC\\data\\Material\\mtd\\character\\c9990_dummy.mtd";
-                    }
-                    else
-                    {
-                        m.MTD = "N:\\NTC\\data\\Material\\mtd\\character\\c9990_dummy.mtd";
-                    }
-
-                    foreach (FLVER.Texture t in m.Textures)
-                    {
-                        if (t.Path.IndexOf("_a.tif") >= 0)
-                        {
-                            t.Type = "Character_AMSN_snp_Texture2D_2_AlbedoMap_0";
-                        }
-                        else if (t.Path.IndexOf("_n.tif") >= 0)
-                        {
-                            t.Type = "Character_AMSN_snp_Texture2D_7_NormalMap_4";
-                        }
-                        else if (t.Path.IndexOf("_r.tif") >= 0)
-                        {
-                            t.Type = "g_SpecularTexture";
-                        }
-
-                    }
-                }
-                autoBackUp(); targetFlver.Write(flverName);
-                MessageBox.Show("Material change completed! Please exit the program!", "Info");
-
-
-
-            };
-            btnY += 50;
-
-            Button tpfXmlEdit = new Button();
-            ButtonTips("Auto-edit the xml file depacked from the /tpf texture file. So that you don't need to manually modify it to add new textures.\n" +
-          "自动编辑.tpf贴图文件用yabber解包出来的xml文件。", tpfXmlEdit);
-            tpfXmlEdit.Text = "Xml Edit";
-            tpfXmlEdit.Location = new System.Drawing.Point(650, btnY);
-            tpfXmlEdit.Click += (s, e) => {
-
-                XmlEdit();
-
-            };
-            btnY += 50;
-
-
-            Button mtdConvert = new Button();
-            ButtonTips("Rename all the materials (mtd path) to the name you want.\n" +
-          "自动转换所有材质路径为你输入的值。", mtdConvert);
-            mtdConvert.Text = "M. Rename";
-            mtdConvert.Location = new System.Drawing.Point(650, btnY);
-            mtdConvert.Click += (s, e) => {
-                string res = "M[ARSN].mtd";
-                DialogResult dr = BasicTools.ShowInputDialog(ref res);
-                if (dr == DialogResult.Cancel) { return; }
-                foreach (var v in targetFlver.Materials)
-                {
-                    v.MTD = res;
-
-                }
-                autoBackUp(); targetFlver.Write(flverName);
-                MessageBox.Show("Material change completed! Please exit the program!", "Info");
-
-            };
-            btnY += 50;
-
-
-            f.Size = new System.Drawing.Size(750, 600);
-            p.Size = new System.Drawing.Size(600, 530);
-            f.Resize += (s, e) =>
-                {
-                    p.Size = new System.Drawing.Size(f.Size.Width - 150, f.Size.Height - 70);
-                    button.Location = new System.Drawing.Point(f.Size.Width - 100, 50);
-                    button2.Location = new System.Drawing.Point(f.Size.Width - 100, 100);
-                    button3.Location = new System.Drawing.Point(f.Size.Width - 100, 150);
-                    button3ex.Location = new System.Drawing.Point(f.Size.Width - 100, 200);
-                    buttonARSN.Location = new System.Drawing.Point(f.Size.Width - 100, 250);
-                    buttonDMY.Location = new System.Drawing.Point(f.Size.Width - 100, 300);
-                    tpfXmlEdit.Location = new System.Drawing.Point(f.Size.Width - 100, 350);
-                    mtdConvert.Location = new System.Drawing.Point(f.Size.Width - 100, 400);
-                };
-
-            f.Controls.Add(button);
-            f.Controls.Add(button2);
-            f.Controls.Add(button3);
-            f.Controls.Add(button3ex);
-            f.Controls.Add(buttonARSN);
-            f.Controls.Add(buttonDMY);
-            f.Controls.Add(tpfXmlEdit);
-            f.Controls.Add(mtdConvert);
-            f.ShowDialog();
-            //Application.Run(f);
-
-
-
-        }
 
         private static void XmlEdit()
         {
@@ -2255,15 +1395,15 @@ namespace FLVER_EDITOR
         {
 
             int[] tests = { 0,0,0};
-          
-            Form f = new Form();
+
+            System.Windows.Forms.Form f = new System.Windows.Forms.Form();
             f.Text = "Mesh";
             Panel p = new Panel();
             int sizeY = 50;
             int currentY = 10;
             var boneNameList = new List<TextBox>();
-            parentList = new List<TextBox>();
-            childList = new List<TextBox>();
+            parentList = new List<short>();
+            childList = new List<short>();
             //p.AutoSize = true;
             p.AutoScroll = true;
             f.Controls.Add(p);
@@ -3383,7 +2523,7 @@ namespace FLVER_EDITOR
         static void materialQuickEdit(FLVER.Material m , int mIndex = 0)
         {
             //MessageBox.Show("Now editing material:" + m.Name);
-            Form f = new Form();
+            System.Windows.Forms.Form f = new System.Windows.Forms.Form();
             f.Text = "Material quick editor : <" + m.Name + ">";
             Panel p = new Panel();
             List<TextBox> typeList = new List<TextBox>();
@@ -3752,7 +2892,6 @@ namespace FLVER_EDITOR
         {
             System.Windows.Forms.ToolTip ToolTip1 = new System.Windows.Forms.ToolTip();
             ToolTip1.SetToolTip(btn, tips);
-
         }
 
 
@@ -3903,7 +3042,480 @@ namespace FLVER_EDITOR
             }
             return table;
         }
+
+        /// <summary>
+        /// Update Vertices
+        /// </summary>
+        public static void updateVerticesLegacy()
+        {
+            useCheckingMesh = false;
+            List<VertexPositionColor> ans = new List<VertexPositionColor>();
+            List<VertexPositionColor> triangles = new List<VertexPositionColor>();
+            List<VertexPositionColorTexture> textureTriangles = new List<VertexPositionColorTexture>();
+            vertices.Clear();
+            verticesInfo.Clear();
+            List<MeshInfos> mis = new List<MeshInfos>();
+
+
+
+            if (useCheckingPoint)
+            {
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X - 0.05f, checkingPoint.Z - 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.05f, checkingPoint.Z + 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
+
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X - 0.05f, checkingPoint.Z + 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.05f, checkingPoint.Z - 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
+
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X, checkingPoint.Z, checkingPoint.Y), Microsoft.Xna.Framework.Color.Blue));
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.2f * checkingPointNormal.X, checkingPoint.Z + 0.2f * checkingPointNormal.Z, checkingPoint.Y + 0.2f * checkingPointNormal.Y), Microsoft.Xna.Framework.Color.Blue));
+
+
+                useCheckingPoint = false;
+            }
+
+            for (int i = 0; i < targetFlver.Meshes.Count; i++)
+            {
+                // int currentV = 0;
+                //Microsoft.Xna.Framework.Vector3[] vl = new Microsoft.Xna.Framework.Vector3[3];
+                if (targetFlver.Meshes[i] == null) { continue; }
+                foreach (var vi in targetFlver.Meshes[i].Vertices)
+                {
+                    ans.Add(new VertexPositionColor(toXnaV3XZY(vi.Positions[0]), Microsoft.Xna.Framework.Color.Black));
+
+                }
+
+
+                for (uint j = 0; j < targetFlver.Meshes[i].Vertices.Count; j++)
+                {
+                    FLVER.Vertex v = targetFlver.Meshes[i].Vertices[(int)j];
+                    vertices.Add(v);
+                    VertexInfo vi = new VertexInfo();
+                    vi.meshIndex = i;
+                    vi.vertexIndex = j;
+                    verticesInfo.Add(vi);
+                }
+            }
+
+
+
+            mono.vertices = ans.ToArray();
+            // mono.triTextureVertices = textureTriangles.ToArray();
+            mono.meshInfos = mis.ToArray();
+            mono.triVertices = triangles.ToArray();
+
+        }
+
+
+
+        public static void updateVertices()
+        {
+            if (legacyDisplay) 
+            { 
+                updateVerticesLegacy(); 
+                return;
+            }
+
+            List<VertexPositionColor> ans = new List<VertexPositionColor>();
+            List<VertexPositionColor> triangles = new List<VertexPositionColor>();
+            List<VertexPositionColorTexture> textureTriangles = new List<VertexPositionColorTexture>();
+            vertices.Clear();
+            verticesInfo.Clear();
+            List<MeshInfos> mis = new List<MeshInfos>();
+
+            for (int i = 0; i < targetFlver.Meshes.Count; i++)
+            {
+                // int currentV = 0;
+                //Microsoft.Xna.Framework.Vector3[] vl = new Microsoft.Xna.Framework.Vector3[3];
+                if (targetFlver.Meshes[i] == null) 
+                { 
+                    continue; 
+                }
+
+                bool renderBackFace = false;
+
+                if (targetFlver.Meshes[i].FaceSets.Count > 0)
+                {
+                    if (targetFlver.Meshes[i].FaceSets[0].CullBackfaces == false) 
+                    { 
+                        renderBackFace = true; 
+                    }
+                }
+
+                foreach (FLVER.Vertex[] vl in targetFlver.Meshes[i].GetFaces())
+                {
+                    Microsoft.Xna.Framework.Color cline = Microsoft.Xna.Framework.Color.Black;
+
+                    if (useCheckingMesh && checkingMeshNum == i)
+                    {
+                        cline.G = 255;
+                        cline.R = 255;
+                    }
+
+                    cline.A = 125;
+                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[0].Positions[0]), cline));
+                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[1].Positions[0]), cline));
+                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[0].Positions[0]), cline));
+                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[2].Positions[0]), cline));
+                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[1].Positions[0]), cline));
+                    ans.Add(new VertexPositionColor(toXnaV3XZY(vl[2].Positions[0]), cline));
+
+                    Microsoft.Xna.Framework.Color c = new Microsoft.Xna.Framework.Color();
+
+                    Microsoft.Xna.Framework.Vector3 va = toXnaV3(vl[1].Positions[0]) - toXnaV3(vl[0].Positions[0]);
+                    Microsoft.Xna.Framework.Vector3 vb = toXnaV3(vl[2].Positions[0]) - toXnaV3(vl[0].Positions[0]);
+                    Microsoft.Xna.Framework.Vector3 vnromal = crossPorduct(va, vb);
+                    vnromal.Normalize();
+                    Microsoft.Xna.Framework.Vector3 light = new Microsoft.Xna.Framework.Vector3(mono.lightX, mono.lightY, mono.lightZ);
+
+                    light.Normalize();
+                    float theta = dotProduct(vnromal, light);
+                    int value = 125 + (int)(125 * theta);
+
+                    if (value > 255) 
+                    { 
+                        value = 255; 
+                    }
+                    if (value < 0) 
+                    {
+                        value = 0; 
+                    }
+                    if (mono.flatShading) 
+                    { 
+                        value = 255; 
+                    }
+
+                    c.R = (byte)value;
+                    c.G = (byte)value;
+                    c.B = (byte)value;
+                    c.A = 255;
+
+                    if (useCheckingMesh && checkingMeshNum == i)
+                    {
+                        c.B = 0;
+                    }
+                    triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[0].Positions[0]), c));
+                    triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[2].Positions[0]), c));
+                    triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[1].Positions[0]), c));
+
+                    if (loadTexture)
+                    {
+                        textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[0].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[0].UVs[0].X, vl[0].UVs[0].Y)));
+                        textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[2].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[2].UVs[0].X, vl[2].UVs[0].Y)));
+                        textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[1].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[1].UVs[0].X, vl[1].UVs[0].Y)));
+
+                    }
+
+
+
+                    if (renderBackFace)
+                    {
+                        triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[0].Positions[0]), c));
+                        triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[1].Positions[0]), c));
+                        triangles.Add(new VertexPositionColor(toXnaV3XZY(vl[2].Positions[0]), c));
+
+
+                        if (loadTexture)
+                        {
+                            textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[0].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[0].UVs[0].X, vl[0].UVs[0].Y)));
+                            textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[1].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[1].UVs[0].X, vl[1].UVs[0].Y)));
+                            textureTriangles.Add(new VertexPositionColorTexture(toXnaV3XZY(vl[2].Positions[0]), c, new Microsoft.Xna.Framework.Vector2(vl[2].UVs[0].X, vl[2].UVs[0].Y)));
+
+                        }
+
+                    }
+
+
+                }
+
+                for (uint j = 0; j < targetFlver.Meshes[i].Vertices.Count; j++)
+                {
+                    FLVER.Vertex v = targetFlver.Meshes[i].Vertices[(int)j];
+                    vertices.Add(v);
+                    VertexInfo vi = new VertexInfo();
+                    vi.meshIndex = i;
+                    vi.vertexIndex = j;
+                    verticesInfo.Add(vi);
+                }
+
+                MeshInfos mi = new MeshInfos();
+                var tName = targetFlver.Materials[targetFlver.Meshes[i].MaterialIndex].Textures[0].Path;
+                tName = FindFileName(tName);
+                mi.textureName = tName;
+                //MessageBox.Show("Found texture name:" + mi.textureName);
+                mi.triTextureVertices = textureTriangles.ToArray();
+                textureTriangles.Clear();
+                mis.Add(mi);
+            }
+            if (ans.Count % 2 != 0)
+            {
+                ans.Add(ans[ans.Count - 1]);
+            }
+
+            for (int i = 0; i < bonePosList.Length; i++)
+            {
+                bonePosList[i] = null;
+
+            }
+
+            //Calcaulte bone global space
+
+            //bone space X,Y,Z axis
+            Vector3D[] bsX = new Vector3D[targetFlver.Bones.Count];
+            Vector3D[] bsY = new Vector3D[targetFlver.Bones.Count];
+            Vector3D[] bsZ = new Vector3D[targetFlver.Bones.Count];
+
+            //bone space origin 
+            Vector3D[] bso = new Vector3D[targetFlver.Bones.Count];
+
+
+            int A = 1;
+            int B = 2;
+            int C = 3;
+
+
+            //  deprecated bone generate functionality
+            {
+                /*
+                for (int i = 0; i < targetFlver.Bones.Count && boneDisplay; i++)
+                {
+                    FLVER.Bone b = targetFlver.Bones[i];
+
+                    bsX[i] = new Vector3D(0,0,1);
+                    bsY[i] = new Vector3D(0, 1, 0);
+                    bsZ[i] = new Vector3D(-1, 0, 0);
+                    bso[i] = new Vector3D();
+                    //targetFlver.Bones[i].Translation
+                    if (targetFlver.Bones[i].ParentIndex == -1 && targetFlver.Bones[i].ChildIndex == -1) { continue; }
+                    if (targetFlver.Bones[i].ParentIndex == -1 ) {
+
+                        bso[i] = new Vector3D(b.Translation.X, b.Translation.Y, b.Translation.Z);
+
+                        Vector3D nx = new Vector3D(bsX[i].toNumV3());
+                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsX[i].toNumV3(), A * b.Rotation.X));
+                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsY[i].toNumV3(), B * b.Rotation.Y));
+                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsZ[i].toNumV3(), C * b.Rotation.Z));
+
+
+
+                        Vector3D ny = new Vector3D(bsY[i].toNumV3());
+                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsX[i].toNumV3(), A * b.Rotation.X));
+                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsY[i].toNumV3(), B * b.Rotation.Y));
+                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsZ[i].toNumV3(), C * b.Rotation.Z));
+
+
+                        Vector3D nz = new Vector3D(bsZ[i].toNumV3());
+                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsX[i].toNumV3(), A * b.Rotation.X));
+                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsY[i].toNumV3(),B * b.Rotation.Y));
+                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsZ[i].toNumV3(), C * b.Rotation.Z));
+                        nx = nx * b.Scale.X;
+                        ny = ny * b.Scale.Y;
+                        ny = ny * b.Scale.Z;
+
+                        bsX[i] = nx;
+                        bsY[i] = ny;
+                        bsZ[i] = nz;
+
+                        continue;
+
+                    }
+                    int pbid = targetFlver.Bones[i].ParentIndex;
+                    if (bsX[pbid] != null)
+                    {
+
+                         float r1 = b.Rotation.Y;
+                         float r2 = b.Rotation.X;
+                         float r3 = b.Rotation.Z;
+                         if (A == 1) { r1 = b.Rotation.X; }
+                         if (A == 2) { r1 = b.Rotation.Y; }
+                         if (A == 3) { r1 = b.Rotation.Z; }
+
+                         if (B == 1) { r2 = b.Rotation.X; }
+                         if (B == 2) { r2 = b.Rotation.Y; }
+                         if (B == 3) { r2 = b.Rotation.Z; }
+
+                         if (C == 1) { r3 = b.Rotation.X; }
+                         if (C == 2) { r3 = b.Rotation.Y; }
+                         if (C == 3) { r3 = b.Rotation.Z; }
+                        bsX[i] = new Vector3D(bsX[pbid].X, bsX[pbid].Y, bsX[pbid].Z);
+                        bsY[i] = new Vector3D(bsY[pbid].X, bsY[pbid].Y, bsY[pbid].Z);
+                        bsZ[i] = new Vector3D(bsZ[pbid].X, bsZ[pbid].Y, bsZ[pbid].Z);
+
+                        Vector3D nx = new Vector3D(bsX[i].toNumV3());
+                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsX[i].toNumV3(), r1));
+                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsY[i].toNumV3(), r2));
+                        nx = new Vector3D(RotateLine(nx.toNumV3(), new Vector3(), bsZ[i].toNumV3(), r3));
+
+                        Vector3D ny = new Vector3D(bsY[i].toNumV3());
+                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsX[i].toNumV3(), r1));
+                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsY[i].toNumV3(),r2));
+                        ny = new Vector3D(RotateLine(ny.toNumV3(), new Vector3(), bsZ[i].toNumV3(), r3));
+
+                        Vector3D nz = new Vector3D(bsZ[i].toNumV3());
+                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsX[i].toNumV3(),r1));
+                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsY[i].toNumV3(), r2));
+                        nz = new Vector3D(RotateLine(nz.toNumV3(), new Vector3(), bsZ[i].toNumV3(), r3));
+
+                        nx = nx * b.Scale.X;
+                        ny = ny * b.Scale.Y;
+                        ny = ny * b.Scale.Z;
+
+
+                        bsX[i] = nx;
+                        bsY[i] = ny;
+                        bsZ[i] = nz;
+
+                        bso[i] = new Vector3D(bso[pbid].X, bso[pbid].Y, bso[pbid].Z);
+
+                        bso[i] = bso[i] + b.Translation.X * bsX[pbid] + b.Translation.Y * bsY[pbid] + b.Translation.Z * bsZ[pbid];
+                    }
+
+                }
+
+
+                for (int i = 0; i < targetFlver.Bones.Count && boneDisplay ; i++)
+                {
+                    //targetFlver.Bones[i].Translation
+                    if (targetFlver.Bones[i].ParentIndex ==  -1 && targetFlver.Bones[i].ChildIndex == -1) { continue; }
+
+                    Vector3 actPos = findBoneTrans(targetFlver.Bones,i,new Vector3());
+
+                    actPos = bso[i].toNumV3();
+
+                    Vector3D forward = new Vector3D(0f,0.05f,0f);
+                    float pitch = targetFlver.Bones[i].Rotation.X;
+                    float roll = targetFlver.Bones[i].Rotation.Z;
+                    float yaw = targetFlver.Bones[i].Rotation.Y;
+                    Vector3 r = targetFlver.Bones[i].Rotation;
+                    //forward = new Vector3D( RotatePoint(forward.toNumV3(),pitch,roll,yaw));
+                    forward = new Vector3D(RotatePoint(forward.toNumV3(), r.Y,r.X,r.Z));
+
+                    forward = bsX[i] * 0.1f;
+
+
+                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X - 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                     ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+
+                     ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z - 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                     ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z + 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+
+                     ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z, actPos.Y - 0.025f), Microsoft.Xna.Framework.Color.Purple));
+                     ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z, actPos.Y + 0.025f), Microsoft.Xna.Framework.Color.Purple));
+
+                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X - 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + forward.X, actPos.Z + forward.Z, actPos.Y + forward.Y), Microsoft.Xna.Framework.Color.Purple));
+
+                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + forward.X, actPos.Z + forward.Z, actPos.Y + forward.Y), Microsoft.Xna.Framework.Color.Purple));
+
+                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z - 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + forward.X, actPos.Z + forward.Z, actPos.Y + forward.Y), Microsoft.Xna.Framework.Color.Purple));
+
+                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X , actPos.Z + 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                    ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + forward.X, actPos.Z + forward.Z, actPos.Y + forward.Y), Microsoft.Xna.Framework.Color.Purple));
+
+
+                }
+                */
+            }
+            //
+
+            if (boneDisplay)
+            {
+                Transform3D[] boneTrans = new Transform3D[targetFlver.Bones.Count];
+                for (int i = 0; i < targetFlver.Bones.Count; i++)
+                {
+                    boneTrans[i] = new Transform3D();
+                    boneTrans[i].rotOrder = rotOrder;
+                    boneTrans[i].position = new Vector3D(targetFlver.Bones[i].Translation);
+                    boneTrans[i].setRotationInRad(new Vector3D(targetFlver.Bones[i].Rotation));
+                    boneTrans[i].scale = new Vector3D(targetFlver.Bones[i].Scale);
+
+                    if (targetFlver.Bones[i].ParentIndex >= 0)
+                    {
+                        boneTrans[i].parent = boneTrans[targetFlver.Bones[i].ParentIndex];
+
+                        Vector3D actPos = boneTrans[i].getGlobalOrigin();
+                        /* ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X - 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                         ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X + 0.025f, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+
+                         ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z - 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                         ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z + 0.025f, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+
+                         ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z, actPos.Y - 0.025f), Microsoft.Xna.Framework.Color.Purple));
+                         ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z, actPos.Y + 0.025f), Microsoft.Xna.Framework.Color.Purple));*/
+
+
+                        if (boneTrans[targetFlver.Bones[i].ParentIndex] != null)
+                        {
+                            Vector3D parentPos = boneTrans[targetFlver.Bones[i].ParentIndex].getGlobalOrigin();
+
+                            ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(parentPos.X - 0.005f, parentPos.Z - 0.005f, parentPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                            ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+
+                            ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(parentPos.X + 0.005f, parentPos.Z + 0.005f, parentPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                            ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(actPos.X, actPos.Z, actPos.Y), Microsoft.Xna.Framework.Color.Purple));
+                        }
+
+                    }
+
+
+
+                }
+
+
+            }
+
+
+
+            for (int i = 0; i < targetFlver.Dummies.Count && dummyDisplay; i++)
+            {
+                FLVER.Dummy d = targetFlver.Dummies[i];
+
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X - 0.025f, d.Position.Z, d.Position.Y), Microsoft.Xna.Framework.Color.Purple));
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X + 0.025f, d.Position.Z, d.Position.Y), Microsoft.Xna.Framework.Color.Purple));
+
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X, d.Position.Z - 0.025f, d.Position.Y), Microsoft.Xna.Framework.Color.Purple));
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X, d.Position.Z + 0.025f, d.Position.Y), Microsoft.Xna.Framework.Color.Purple));
+
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X, d.Position.Z, d.Position.Y), Microsoft.Xna.Framework.Color.Green));
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(d.Position.X + d.Forward.X, d.Position.Z + d.Forward.Z, d.Position.Y + d.Forward.Y), Microsoft.Xna.Framework.Color.Green));
+
+            }
+
+            if (useCheckingPoint)
+            {
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X - 0.05f, checkingPoint.Z - 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.05f, checkingPoint.Z + 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
+
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X - 0.05f, checkingPoint.Z + 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.05f, checkingPoint.Z - 0.05f, checkingPoint.Y), Microsoft.Xna.Framework.Color.AntiqueWhite));
+
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X, checkingPoint.Z, checkingPoint.Y), Microsoft.Xna.Framework.Color.Blue));
+                ans.Add(new VertexPositionColor(new Microsoft.Xna.Framework.Vector3(checkingPoint.X + 0.2f * checkingPointNormal.X, checkingPoint.Z + 0.2f * checkingPointNormal.Z, checkingPoint.Y + 0.2f * checkingPointNormal.Y), Microsoft.Xna.Framework.Color.Blue));
+
+
+                useCheckingPoint = false;
+            }
+            useCheckingMesh = false;
+            mono.vertices = ans.ToArray();
+            // mono.triTextureVertices = textureTriangles.ToArray();
+            mono.meshInfos = mis.ToArray();
+            mono.triVertices = triangles.ToArray();
+        }
+
+
+
+
+        static void autoBackUp()
+        {
+
+            if (!File.Exists(target_filename + ".bak"))
+            {
+                System.IO.File.Copy(target_filename, target_filename + ".bak", false);
+            }
+
+
+
+        }
     }
-
-
 }

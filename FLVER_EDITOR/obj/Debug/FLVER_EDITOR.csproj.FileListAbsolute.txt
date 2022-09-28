@@ -2,9 +2,6 @@ C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin
 C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\dummyInfo.dll
 C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\obj\boxobj.mtl
 C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\obj\boxobj.obj
-C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\flver\EliteKnight.flver
-C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\flver\WP_A_0300.flver
-C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\flver\WP_A_1070_Cane.flver
 C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\FLVER_EDITOR.ini
 C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\BONE_CONVERSION.ini
 C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\FLVER_EDITOR.exe.config
@@ -53,3 +50,16 @@ C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\obj
 C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\obj\Debug\FLVER_EDITOR.exe
 C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\obj\Debug\FLVER_EDITOR.pdb
 C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\image\single_color.png
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\obj\Debug\FLVER_EDITOR.EditorView.resources
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\obj\Debug\FLVER_EDITOR.SettingsView.resources
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\flver\ds3\BD_F_7900.flver
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\flver\ds3\WP_A_0720.flver
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\flver\er\BD_M_1690.flver
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\flver\er\WP_A_0818.flver
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\flver\misc\EliteKnight.flver
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\flver\misc\WP_A_0300.flver
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\flver\misc\WP_A_1070_Cane.flver
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\parts\ds3-bd_f_7900.partsbnd.dcx
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\parts\ds3-wp_a_0818.partsbnd.dcx
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\parts\er-bd_m_1690.partsbnd.dcx
+C:\Users\Xylozi\Documents\C# Projects\FLVER-Editor\FLVER_Editor\FLVER_EDITOR\bin\Debug\resources\parts\er-wp_a_0720.partsbnd.dcx

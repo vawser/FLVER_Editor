@@ -92,6 +92,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="BasicTools.cs" />
+    <Compile Include="EditorView.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="EditorView.Designer.cs">
+      <DependentUpon>EditorView.cs</DependentUpon>
+    </Compile>
     <Compile Include="IniParser.cs" />
     <Compile Include="Matrix3D.cs" />
     <Compile Include="Mono3D.cs" />
@@ -99,8 +105,17 @@
     <Compile Include="ProgramFbxImport.cs" />
     <Compile Include="ProgramUtils.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="SettingsView.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="SettingsView.Designer.cs">
+      <DependentUpon>SettingsView.cs</DependentUpon>
+    </Compile>
     <Compile Include="Transform3D.cs" />
     <Compile Include="Vector3D.cs" />
+    <EmbeddedResource Include="EditorView.resx">
+      <DependentUpon>EditorView.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
@@ -111,6 +126,9 @@
       <DependentUpon>Resources.resx</DependentUpon>
       <DesignTime>True</DesignTime>
     </Compile>
+    <EmbeddedResource Include="SettingsView.resx">
+      <DependentUpon>SettingsView.cs</DependentUpon>
+    </EmbeddedResource>
     <None Include="packages.config" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
@@ -144,13 +162,37 @@
     <Content Include="resources\obj\boxobj.obj">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="resources\flver\EliteKnight.flver">
+    <Content Include="resources\flver\ds3\BD_F_7900.flver">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="resources\flver\WP_A_0300.flver">
+    <Content Include="resources\flver\ds3\WP_A_0720.flver">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="resources\flver\WP_A_1070_Cane.flver">
+    <Content Include="resources\flver\er\BD_M_1690.flver">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="resources\flver\er\WP_A_0818.flver">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="resources\flver\misc\EliteKnight.flver">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="resources\flver\misc\WP_A_0300.flver">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="resources\flver\misc\WP_A_1070_Cane.flver">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="resources\parts\ds3-bd_f_7900.partsbnd.dcx">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="resources\parts\ds3-wp_a_0818.partsbnd.dcx">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="resources\parts\er-bd_m_1690.partsbnd.dcx">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="resources\parts\er-wp_a_0720.partsbnd.dcx">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="resources\FLVER_EDITOR.ini">

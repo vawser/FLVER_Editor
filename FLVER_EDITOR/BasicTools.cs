@@ -27,7 +27,7 @@ namespace FLVER_EDITOR
         public static DialogResult ShowInputDialog(ref string input)
         {
             System.Drawing.Size size = new System.Drawing.Size(200, 70);
-            Form inputBox = new Form();
+            System.Windows.Forms.Form inputBox = new System.Windows.Forms.Form();
 
             inputBox.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
             inputBox.ClientSize = size;

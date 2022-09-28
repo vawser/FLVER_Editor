@@ -32,7 +32,7 @@ namespace FLVER_EDITOR
         Texture2D test;
         KeyboardState prevState = new KeyboardState();
         MouseState prevMState = new MouseState();
-       public RenderMode renderMode = RenderMode.Both;
+        public RenderMode renderMode = RenderMode.Both;
         public VertexPositionColor[] vertices = new VertexPositionColor[0];
         public VertexPositionColor[] triVertices = new VertexPositionColor[0];
         public bool flatShading = false;
@@ -64,7 +64,7 @@ namespace FLVER_EDITOR
         VertexInfo targetVinfo = null;
         ContextMenu cm = new ContextMenu();
         bool rightClickSilence = false;
-        Form f;
+        System.Windows.Forms.Form f;
         Texture2D testTexture;
         Dictionary<string, Texture2D> textureMap = new Dictionary<string, Texture2D>();
         private static GCHandle handle;
@@ -78,7 +78,7 @@ namespace FLVER_EDITOR
             Content.RootDirectory = "Content";
             // string path = @"data\img\27.png";
             //test = Content.Load<Texture2D>(@"data\img\27.png");
-            f =  (Form)Form.FromHandle(Window.Handle);
+            f =  (System.Windows.Forms.Form)System.Windows.Forms.Form.FromHandle(Window.Handle);
 
    
             cm.MenuItems.Add("Cancel");
@@ -150,7 +150,6 @@ namespace FLVER_EDITOR
             f.MouseDown += new MouseEventHandler(this.pictureBox1_MouseDown);
             f.MouseUp += new MouseEventHandler(this.pictureBox1_MouseUp);
         }
-
 
 
         private void deleteVertexBelow()
@@ -300,7 +299,7 @@ namespace FLVER_EDITOR
             testTexture = null;
             if (!Program.loadTexture) { return; }
             //decrypt tpf file;
-            string tpfFile = Program.orgFileName.Substring(0,Program.orgFileName.Length - 5) + "tpf";
+            string tpfFile = Program.target_filename.Substring(0,Program.target_filename.Length - 5) + "tpf";
 
             try {
 
@@ -595,7 +594,7 @@ namespace FLVER_EDITOR
             {
                 //string text = Program.FormatOutput(new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(targetV));
                 //int l = text.Length / 2;
-                Form fn = new Form();
+                System.Windows.Forms.Form fn = new System.Windows.Forms.Form();
                 fn.Size = new System.Drawing.Size(350,650);
 
                 TextBox tb = new TextBox();
@@ -759,6 +758,7 @@ namespace FLVER_EDITOR
                 //offsetY -= mdx * 1 * delta * rightV.Y;
             }
 
+            /*
             if (state.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.F1))
             {
                 renderMode = RenderMode.Line;
@@ -797,6 +797,7 @@ namespace FLVER_EDITOR
                 Program.dummyDisplay = !Program.dummyDisplay;
                 Program.updateVertices();
             }
+            */
 
             //1.73 Added focus detect
             if (mState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && this.IsActive && false)

@@ -652,7 +652,7 @@ namespace FLVER_EDITOR
 
             //For Moonlight sword -> threaded cane, Y+0.5f
 
-            Form f = new Form();
+            System.Windows.Forms.Form f = new System.Windows.Forms.Form();
 
             Label l = new Label();
             l.Text = "x,y,z offset? Y= weapon length axis,Y+=Closer to hand";

@@ -1,0 +1,50 @@
+Window:
+
+Two core views:
+Edit - Render
+
+# Edit
+Toolbar:
+Import Model
+Export DAE
+
+Tab View:
+- Bones
+    Toolbar:
+    - Modify 
+    - Import JSON
+    - Export JSON
+    - View Buffer Layout
+    - Actions: 
+        - Convert Bloodborne model for Sekiro
+        
+- Material
+    Toolbar:
+    - Modify 
+    - Import JSON
+    - Export JSON
+    - Actions:
+        - Convert M[ARSN] Material to DS3/Sekiro Standard
+        - Convert M[DUMMY] Material to Sekiro Standard
+        - Rename Material
+        - Automatically edit Texture TPF XML file
+- Mesh
+    Toolbar:
+    - Modify
+    - Attach
+    - Actions:
+        - Convert DS3 Mesh for Sekiro
+        - Flip YZ Axis
+        - Reverse Faceset
+        - Reverse Normal and Tangent
+        - Set Mesh to DS3/Sekiro Defaults
+    
+- Dummy Point
+    Toolbar:
+    - Modify
+    - Import JSON
+    - Export JSON
+    - Actions:
+        - Apply Weapon Trail Fix for Sekiro 
+
+# Render
